@@ -29,6 +29,10 @@ Supported services:
 If the request is unclear, ask what service they need.
 `;
 
+app.get("/", (_req, res) => {
+  res.send("ServHQ AI backend live");
+});
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
