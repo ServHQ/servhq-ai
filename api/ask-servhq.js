@@ -1,20 +1,23 @@
 import OpenAI from "openai";
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Origin", "https://servhq.com.au");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  // handle preflight requests
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
-  // only allow POST
-  if (req.method !== "POST") {
-    return res.status(405).json({
-      reply: "Method not allowed",
+  if (req.method === "GET") {
+    return res.status(200).json({
+      status: "ok",
+      message: "Ask ServHQ API is live",
     });
+  }
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ reply: "Method not allowed" });
   }
 
   try {
@@ -64,15 +67,11 @@ If the request is unclear, ask what service they need.
       input,
     });
 
-    const reply =
-      response.output_text ||
-      "Sorry — Ask ServHQ had trouble responding.";
-
-    return res.status(200).json({ reply });
-
+    return res.status(200).json({
+      reply: response.output_text || "Sorry — Ask ServHQ had trouble responding.",
+    });
   } catch (error) {
     console.error(error);
-
     return res.status(500).json({
       reply: "Sorry — Ask ServHQ had trouble responding.",
     });
