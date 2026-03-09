@@ -69,72 +69,11 @@ function buildEmailHtml(lead, transcript) {
     ["Address", lead.address],
   ];
 
-  let serviceFields = [];
-
-  if (lead.service === "cleaning") {
-    serviceFields = [
-      ["Property type", lead.property_type],
-      ["Bedrooms", lead.bedrooms],
-      ["Bathrooms", lead.bathrooms],
-      ["Main areas", lead.main_areas],
-      ["Main concerns", lead.main_concerns],
-      ["Pets", lead.pets],
-      ["Clean type", lead.clean_type],
-      ["Preferred date/time", lead.preferred_datetime],
-      ["Frequency", lead.frequency],
-    ];
-  }
-
-  if (lead.service === "lawn_mowing") {
-    serviceFields = [
-      ["Last mowed", lead.last_mowed],
-      ["Front/back/both", lead.yard_areas],
-      ["Yard size", lead.yard_size],
-      ["Overgrown", lead.overgrown],
-      ["Extras", lead.extras],
-      ["Access issues / gates", lead.access_issues],
-      ["Preferred date/time", lead.preferred_datetime],
-      ["Once-off or ongoing", lead.frequency],
-    ];
-  }
-
-  if (lead.service === "car_detailing") {
-    serviceFields = [
-      ["Vehicle make/model", lead.vehicle_make_model],
-      ["Service type", lead.service_type],
-      ["Vehicle condition", lead.vehicle_condition],
-      ["Main concerns", lead.main_concerns],
-      ["Heavily soiled", lead.heavily_soiled],
-      ["Suburb / location", lead.suburb_location],
-      ["Preferred date/time", lead.preferred_datetime],
-      ["Can send photos", lead.photos_available],
-    ];
-  }
-
-  if (lead.service === "pressure_washing") {
-    serviceFields = [
-      ["What needs washing", lead.area_types],
-      ["Approximate size", lead.area_size],
-      ["Heavy dirt / mould / moss / staining", lead.dirt_condition],
-      ["Easy access", lead.access],
-      ["Water access issues", lead.water_access_issues],
-      ["Preferred date/time", lead.preferred_datetime],
-      ["Once-off or ongoing", lead.frequency],
-    ];
-  }
-
-  if (lead.service === "pest_control") {
-    serviceFields = [
-      ["Property type", lead.property_type],
-      ["Pest issue", lead.pest_issue],
-      ["Severity", lead.severity],
-      ["Inside / outside / both", lead.inside_outside],
-      ["Property size", lead.property_size],
-      ["Pets or children on site", lead.pets_or_children],
-      ["Preferred date/time", lead.preferred_datetime],
-      ["One-off or ongoing", lead.frequency],
-    ];
-  }
+  const serviceFields = [
+    ["Job type", lead.job_type],
+    ["Job details", lead.job_details],
+    ["Preferred date/time", lead.preferred_datetime],
+  ];
 
   const rows = [...commonFields, ...serviceFields]
     .map(
@@ -169,75 +108,14 @@ function buildEmailText(lead, transcript) {
     `Phone: ${formatValue(lead.phone)}`,
     `Email: ${formatValue(lead.email)}`,
     `Address: ${formatValue(lead.address)}`,
+    `Job type: ${formatValue(lead.job_type)}`,
+    `Job details: ${formatValue(lead.job_details)}`,
+    `Preferred date/time: ${formatValue(lead.preferred_datetime)}`,
     "",
+    "Conversation transcript:",
+    transcript,
   ];
 
-  if (lead.service === "cleaning") {
-    lines.push(
-      `Property type: ${formatValue(lead.property_type)}`,
-      `Bedrooms: ${formatValue(lead.bedrooms)}`,
-      `Bathrooms: ${formatValue(lead.bathrooms)}`,
-      `Main areas: ${formatValue(lead.main_areas)}`,
-      `Main concerns: ${formatValue(lead.main_concerns)}`,
-      `Pets: ${formatValue(lead.pets)}`,
-      `Clean type: ${formatValue(lead.clean_type)}`,
-      `Preferred date/time: ${formatValue(lead.preferred_datetime)}`,
-      `Frequency: ${formatValue(lead.frequency)}`
-    );
-  }
-
-  if (lead.service === "lawn_mowing") {
-    lines.push(
-      `Last mowed: ${formatValue(lead.last_mowed)}`,
-      `Front/back/both: ${formatValue(lead.yard_areas)}`,
-      `Yard size: ${formatValue(lead.yard_size)}`,
-      `Overgrown: ${formatValue(lead.overgrown)}`,
-      `Extras: ${formatValue(lead.extras)}`,
-      `Access issues: ${formatValue(lead.access_issues)}`,
-      `Preferred date/time: ${formatValue(lead.preferred_datetime)}`,
-      `Frequency: ${formatValue(lead.frequency)}`
-    );
-  }
-
-  if (lead.service === "car_detailing") {
-    lines.push(
-      `Vehicle make/model: ${formatValue(lead.vehicle_make_model)}`,
-      `Service type: ${formatValue(lead.service_type)}`,
-      `Vehicle condition: ${formatValue(lead.vehicle_condition)}`,
-      `Main concerns: ${formatValue(lead.main_concerns)}`,
-      `Heavily soiled: ${formatValue(lead.heavily_soiled)}`,
-      `Suburb/location: ${formatValue(lead.suburb_location)}`,
-      `Preferred date/time: ${formatValue(lead.preferred_datetime)}`,
-      `Can send photos: ${formatValue(lead.photos_available)}`
-    );
-  }
-
-  if (lead.service === "pressure_washing") {
-    lines.push(
-      `What needs washing: ${formatValue(lead.area_types)}`,
-      `Approximate size: ${formatValue(lead.area_size)}`,
-      `Heavy dirt / mould / moss / staining: ${formatValue(lead.dirt_condition)}`,
-      `Easy access: ${formatValue(lead.access)}`,
-      `Water access issues: ${formatValue(lead.water_access_issues)}`,
-      `Preferred date/time: ${formatValue(lead.preferred_datetime)}`,
-      `Frequency: ${formatValue(lead.frequency)}`
-    );
-  }
-
-  if (lead.service === "pest_control") {
-    lines.push(
-      `Property type: ${formatValue(lead.property_type)}`,
-      `Pest issue: ${formatValue(lead.pest_issue)}`,
-      `Severity: ${formatValue(lead.severity)}`,
-      `Inside/outside: ${formatValue(lead.inside_outside)}`,
-      `Property size: ${formatValue(lead.property_size)}`,
-      `Pets or children: ${formatValue(lead.pets_or_children)}`,
-      `Preferred date/time: ${formatValue(lead.preferred_datetime)}`,
-      `Frequency: ${formatValue(lead.frequency)}`
-    );
-  }
-
-  lines.push("", "Conversation transcript:", transcript);
   return lines.join("\n");
 }
 
@@ -267,7 +145,7 @@ async function sendLeadEmail(lead, transcript) {
 const ASSISTANT_PROMPT = `
 You are Ask ServHQ, a concierge assistant for organising local services.
 
-Your job is to collect a complete quote request and then stop asking questions.
+Your job is to collect a simple quote request with only the core details needed, then stop asking questions.
 
 Supported services:
 - cleaning
@@ -276,74 +154,50 @@ Supported services:
 - pressure washing
 - pest control
 
+Collect only these required fields:
+1. service
+2. full name
+3. phone number
+4. email
+5. full address
+6. job type
+7. basic job details
+8. preferred date and time
+
+How to interpret the fields:
+- "job type" = the main type of work needed for that service
+  Examples:
+  - cleaning: regular clean, deep clean, vacate clean
+  - lawn mowing: lawn mow, yard clean-up, hedge trim
+  - car detailing: interior detail, full detail, cut and polish
+  - pressure washing: driveway, house exterior, paths, patio
+  - pest control: ants, cockroaches, spiders, termites
+- "basic job details" = a short description that helps us understand the job without asking too many questions
+  Examples:
+  - cleaning: bedrooms/bathrooms + any main concern
+  - lawn mowing: last mowed / overgrown / any extras
+  - car detailing: vehicle make/model + condition
+  - pressure washing: what areas + rough size/condition
+  - pest control: pest issue + where the problem is
+
 Rules:
 - Ask only ONE question at a time.
 - Keep replies short, helpful, and professional.
 - Never invent providers, prices, availability, or confirmed bookings.
-- For every lead, collect these common fields:
-  1. full name
-  2. phone number
-  3. email
-  4. full address
-
-Service-specific fields:
-
-Cleaning:
-- type of property
-- number of bedrooms
-- number of bathrooms
-- main areas needing attention
-- main concerns
-- any pets
-- regular clean, deep clean, vacate clean, or one-off
-- preferred date and time
-- how often
-
-Lawn mowing:
-- when the lawn was last mowed
-- front yard, backyard, or both
-- approximate yard size
-- whether the grass is overgrown
-- extras needed (edging, weeding, hedge trimming, green waste removal)
-- access issues or gates
-- preferred date and time
-- once-off or ongoing
-
-Car detailing:
-- make and model
-- type of service needed
-- condition of vehicle
-- main concerns
-- whether heavily soiled
-- suburb / location
-- preferred date and time
-- whether photos can be sent if needed
-
-Pressure washing:
-- full address
-- what needs to be pressure washed
-- approximate size
-- heavy dirt, mould, moss, or staining
-- easy access
-- any water access issues
-- preferred date and time
-- once-off or ongoing
-
-Pest control:
-- type of property
-- pest issue
-- severity
-- inside, outside, or both
-- approximate property size
-- pets or children on site
-- preferred date and time
-- one-off or ongoing prevention
-
-Conversation behaviour:
-- If the service is unclear, ask what service they need.
-- If multiple pieces of information are missing, ask for the single most important next item.
-- Prioritize service type first, then common contact details, then service-specific details.
-- Once everything required is collected, reply with a short confirmation such as:
+- Do not ask long checklists.
+- Do not ask unnecessary follow-up questions once you have enough for a lead.
+- If the service is unclear, ask what service they need first.
+- Prioritize in this order:
+  1. service
+  2. name
+  3. phone
+  4. email
+  5. address
+  6. job type
+  7. job details
+  8. preferred date/time
+- If the user already gave multiple answers in one message, do not ask for them again.
+- Once everything required is collected, reply with:
   "Perfect — I’ve got everything I need. I’ll now pass this through to ServHQ so the right partnered business can be matched to your job."
 - Do not ask any more questions after everything required is collected.
 `;
@@ -362,43 +216,9 @@ Return exactly this shape:
     "phone": "",
     "email": "",
     "address": "",
-
-    "property_type": "",
-    "bedrooms": "",
-    "bathrooms": "",
-    "main_areas": "",
-    "main_concerns": "",
-    "pets": "",
-    "clean_type": "",
-
-    "last_mowed": "",
-    "yard_areas": "",
-    "yard_size": "",
-    "overgrown": "",
-    "extras": "",
-    "access_issues": "",
-
-    "vehicle_make_model": "",
-    "service_type": "",
-    "vehicle_condition": "",
-    "heavily_soiled": "",
-    "suburb_location": "",
-    "photos_available": "",
-
-    "area_types": "",
-    "area_size": "",
-    "dirt_condition": "",
-    "access": "",
-    "water_access_issues": "",
-
-    "pest_issue": "",
-    "severity": "",
-    "inside_outside": "",
-    "property_size": "",
-    "pets_or_children": "",
-
-    "preferred_datetime": "",
-    "frequency": ""
+    "job_type": "",
+    "job_details": "",
+    "preferred_datetime": ""
   }
 }
 
@@ -406,9 +226,8 @@ Rules:
 - Use empty strings for unknown values.
 - "service" must be one of:
   cleaning, lawn_mowing, car_detailing, pressure_washing, pest_control, unknown
-- "is_complete" must only be true when all common fields are present:
-  service, name, phone, email, address
-  and all required service-specific fields are present.
+- "is_complete" must only be true when all of these fields are present:
+  service, name, phone, email, address, job_type, job_details, preferred_datetime
 - "missing_fields" should contain machine-friendly field names only.
 - Return valid JSON only. No markdown. No explanation.
 `;
@@ -494,6 +313,9 @@ export default async function handler(req, res) {
         phone: "",
         email: "",
         address: "",
+        job_type: "",
+        job_details: "",
+        preferred_datetime: "",
       },
     };
 
