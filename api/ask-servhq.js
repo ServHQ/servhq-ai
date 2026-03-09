@@ -60,6 +60,13 @@ function formatValue(value) {
   return String(value);
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function buildEmailHtml(lead, transcript) {
   const commonFields = [
     ["Service", lead.service],
@@ -79,8 +86,8 @@ function buildEmailHtml(lead, transcript) {
     .map(
       ([label, value]) =>
         `<tr>
-          <td style="padding:10px 12px;border:1px solid #ddd;font-weight:600;background:#f7f7f7;">${label}</td>
-          <td style="padding:10px 12px;border:1px solid #ddd;">${formatValue(value)}</td>
+          <td style="padding:10px 12px;border:1px solid #ddd;font-weight:600;background:#f7f7f7;">${escapeHtml(label)}</td>
+          <td style="padding:10px 12px;border:1px solid #ddd;">${escapeHtml(formatValue(value))}</td>
         </tr>`
     )
     .join("");
@@ -94,7 +101,7 @@ function buildEmailHtml(lead, transcript) {
       </table>
 
       <h3 style="margin:0 0 10px;">Conversation transcript</h3>
-      <div style="white-space:pre-wrap;border:1px solid #ddd;padding:14px;border-radius:8px;background:#fafafa;">${transcript}</div>
+      <div style="white-space:pre-wrap;border:1px solid #ddd;padding:14px;border-radius:8px;background:#fafafa;">${escapeHtml(transcript)}</div>
     </div>
   `;
 }
@@ -119,8 +126,8 @@ function buildEmailText(lead, transcript) {
   return lines.join("\n");
 }
 
-async function sendLeadEmail(lead, transcript) {
-  const transporter = nodemailer.createTransport({
+function getTransporter() {
+  return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT || 587),
     secure: String(process.env.SMTP_SECURE || "false") === "true",
@@ -129,6 +136,26 @@ async function sendLeadEmail(lead, transcript) {
       pass: process.env.SMTP_PASS,
     },
   });
+}
+
+function validateSmtpConfig() {
+  const required = ["SMTP_HOST", "SMTP_USER", "SMTP_PASS"];
+  const missing = required.filter((key) => !process.env[key]);
+
+  return {
+    valid: missing.length === 0,
+    missing,
+  };
+}
+
+async function sendLeadEmail(lead, transcript) {
+  const smtpCheck = validateSmtpConfig();
+
+  if (!smtpCheck.valid) {
+    throw new Error(`Missing SMTP env vars: ${smtpCheck.missing.join(", ")}`);
+  }
+
+  const transporter = getTransporter();
 
   const subjectService = lead.service ? lead.service.replace(/_/g, " ") : "service request";
 
@@ -263,6 +290,9 @@ export default async function handler(req, res) {
       });
     }
 
+    console.log("Incoming Ask ServHQ message:", message);
+    console.log("Normalized history length:", history.length);
+
     const assistantInput = [
       {
         role: "system",
@@ -324,11 +354,23 @@ export default async function handler(req, res) {
       service: extracted.service || extracted.lead?.service || "unknown",
     };
 
+    console.log("Extracted lead:", JSON.stringify(lead, null, 2));
+    console.log("Is complete:", extracted.is_complete);
+    console.log("Missing fields:", extracted.missing_fields || []);
+
     let submitted = false;
+    let submissionError = null;
 
     if (extracted.is_complete && !hasAlreadySubmitted(history)) {
-      await sendLeadEmail(lead, `${transcript}\nASSISTANT: ${reply}`);
-      submitted = true;
+      try {
+        console.log("Attempting to send lead email...");
+        await sendLeadEmail(lead, `${transcript}\nASSISTANT: ${reply}`);
+        submitted = true;
+        console.log("Lead email sent successfully.");
+      } catch (emailError) {
+        submissionError = emailError;
+        console.error("Lead email failed:", emailError);
+      }
     }
 
     return res.status(200).json({
@@ -337,9 +379,10 @@ export default async function handler(req, res) {
       leadComplete: Boolean(extracted.is_complete),
       service: lead.service || "unknown",
       missingFields: extracted.missing_fields || [],
+      submissionError: submissionError ? String(submissionError.message || submissionError) : null,
     });
   } catch (error) {
-    console.error("Ask ServHQ error:", error);
+    console.error("Ask ServHQ fatal error:", error);
 
     return res.status(500).json({
       reply: "Sorry — Ask ServHQ had trouble responding.",
