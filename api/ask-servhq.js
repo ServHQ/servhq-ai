@@ -469,9 +469,12 @@ function shouldExtractNow(reply) {
   return (
     normalized.includes("i’ve got everything i need") ||
     normalized.includes("i've got everything i need") ||
-    normalized.includes("pass this through to servhq") ||
-    normalized.includes("did you want me to organise a quote") ||
-    normalized.includes("organising a partnered business in your area now")
+    normalized.includes("thats everything i need") ||
+    normalized.includes("that's everything i need") ||
+    normalized.includes("i have everything i need") ||
+    normalized.includes("ive got everything i need") ||
+    normalized.includes("i've got all i need") ||
+    normalized.includes("i have all i need")
   );
 }
 
@@ -641,7 +644,8 @@ Behavior rules:
   "What is your name please?"
 - When asking for the customer's phone number, say exactly:
   "What’s the best phone number to reach you? We won’t call you yet — it’s just so our team can reach out when they have a quote ready."
-- Once all required fields are collected, reply briefly and stop asking more questions. The system will handle the quote prompt next.
+- Once all required fields are collected, say exactly:
+  "Perfect — I’ve got everything I need."
 `;
 
 const EXTRACTION_PROMPT = `
@@ -722,7 +726,11 @@ export default async function handler(req, res) {
     if (isQuotePromptMessage(lastAssistantMessage) && looksLikeQuoteConfirmation(message)) {
       const transcriptFromHistory = buildConversationText(history);
       const extracted = await extractLeadFromTranscript(transcriptFromHistory);
-      const lead = extracted.lead || emptyLead();
+      const lead = {
+        ...(extracted.lead || {}),
+        service: extracted.service || extracted.lead?.service || "unknown",
+        quote_range: extracted.lead?.quote_range || "",
+      };
 
       let submitted = false;
       let submissionError = null;
@@ -731,7 +739,7 @@ export default async function handler(req, res) {
         console.log("Attempting to send confirmed quote lead email...");
         await sendLeadEmail(
           lead,
-          `${transcriptFromHistory}\nUSER: ${message}\nASSISTANT: Perfect — I’ve got that organised. Is there any other services you are trying to get taken care of while your here?`
+          `${transcriptFromHistory}\nUSER: ${message}\nASSISTANT: Perfect — I’ve got that organised. Is there any other services you are trying to get taken care of while you’re here?`
         );
         submitted = true;
         console.log("Confirmed quote lead email sent successfully.");
@@ -741,7 +749,7 @@ export default async function handler(req, res) {
       }
 
       return res.status(200).json({
-        reply: "Perfect — I’ve got that organised. Is there any other services you are trying to get taken care of while your here?",
+        reply: "Perfect — I’ve got that organised. Is there any other services you are trying to get taken care of while you’re here?",
         submitted,
         leadComplete: true,
         service: lead.service || "unknown",
