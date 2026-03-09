@@ -447,15 +447,15 @@ export default async function handler(req, res) {
     const assistantInput = [
       {
         role: "system",
-        content: [{ type: "input_text", text: ASSISTANT_PROMPT }],
+        content: ASSISTANT_PROMPT,
       },
       ...history.map((m) => ({
         role: m.role,
-        content: [{ type: "input_text", text: m.content }],
+        content: m.content,
       })),
       {
         role: "user",
-        content: [{ type: "input_text", text: message }],
+        content: message,
       },
     ];
 
@@ -475,11 +475,11 @@ export default async function handler(req, res) {
       input: [
         {
           role: "system",
-          content: [{ type: "input_text", text: EXTRACTION_PROMPT }],
+          content: EXTRACTION_PROMPT,
         },
         {
           role: "user",
-          content: [{ type: "input_text", text: transcript }],
+          content: transcript,
         },
       ],
     });
