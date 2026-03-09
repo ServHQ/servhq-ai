@@ -1,52 +1,71 @@
-import express from 'express'
-import path from 'path'
-import { fileURLToPath } from 'url'
+import express from "express";
+import OpenAI from "openai";
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+const app = express();
 
-const app = express()
+app.use(express.json());
 
-// Home route - HTML
-app.get('/', (req, res) => {
-  res.type('html').send(`
-    <!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8"/>
-        <title>Express on Vercel</title>
-        <link rel="stylesheet" href="/style.css" />
-      </head>
-      <body>
-        <nav>
-          <a href="/">Home</a>
-          <a href="/about">About</a>
-          <a href="/api-data">API Data</a>
-          <a href="/healthz">Health</a>
-        </nav>
-        <h1>Welcome to Express on Vercel 🚀</h1>
-        <p>This is a minimal example without a database or forms.</p>
-        <img src="/logo.png" alt="Logo" width="120" />
-      </body>
-    </html>
-  `)
-})
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
-app.get('/about', function (req, res) {
-  res.sendFile(path.join(__dirname, '..', 'components', 'about.htm'))
-})
+const SYSTEM_PROMPT = `
+You are Ask ServHQ, a concierge assistant for organising local services.
 
-// Example API endpoint - JSON
-app.get('/api-data', (req, res) => {
-  res.json({
-    message: 'Here is some sample API data',
-    items: ['apple', 'banana', 'cherry'],
-  })
-})
+Your job is to:
+- identify what service the customer needs
+- ask only the next missing question
+- ask one question at a time
+- keep replies short, helpful, and professional
+- never invent providers, pricing, or confirmed bookings
 
-// Health check
-app.get('/healthz', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() })
-})
+Supported services:
+- cleaning
+- lawn mowing
+- car detailing
+- pressure washing
+- pest control
 
-export default app
+If the request is unclear, ask what service they need.
+`;
+
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
+app.post("/api/ask-servhq", async (req, res) => {
+  try {
+    const { message, history = [] } = req.body;
+
+    const input = [
+      {
+        role: "system",
+        content: [{ type: "input_text", text: SYSTEM_PROMPT }],
+      },
+      ...history.map((m: { role: string; content: string }) => ({
+        role: m.role,
+        content: [{ type: "input_text", text: m.content }],
+      })),
+      {
+        role: "user",
+        content: [{ type: "input_text", text: message }],
+      },
+    ];
+
+    const response = await client.responses.create({
+      model: "gpt-5-mini",
+      input,
+    });
+
+    res.json({
+      reply: response.output_text || "Sorry — Ask ServHQ had trouble responding.",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      reply: "Sorry — Ask ServHQ had trouble responding.",
+    });
+  }
+});
+
+export default app;
