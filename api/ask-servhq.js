@@ -156,7 +156,6 @@ async function sendLeadEmail(lead, transcript) {
   }
 
   const transporter = getTransporter();
-
   const subjectService = lead.service ? lead.service.replace(/_/g, " ") : "service request";
 
   await transporter.sendMail({
@@ -169,7 +168,20 @@ async function sendLeadEmail(lead, transcript) {
   });
 }
 
-function applyReplyOverrides(rawReply, extracted, history, latestMessage) {
+function emptyLead() {
+  return {
+    service: "",
+    name: "",
+    phone: "",
+    email: "",
+    address: "",
+    job_type: "",
+    job_details: "",
+    preferred_datetime: "",
+  };
+}
+
+function applyReplyOverrides(rawReply, extracted) {
   const missing = extracted?.missing_fields || [];
   const lead = extracted?.lead || {};
   const nextField = missing[0];
@@ -269,8 +281,47 @@ function applyReplyOverrides(rawReply, extracted, history, latestMessage) {
   return rawReply;
 }
 
+function shouldExtractNow(reply) {
+  if (!reply) return false;
+
+  const normalized = String(reply).toLowerCase();
+
+  return (
+    normalized.includes("i’ve got everything i need") ||
+    normalized.includes("i've got everything i need") ||
+    normalized.includes("i will now pass this through to servhq") ||
+    normalized.includes("i’ll now pass this through to servhq") ||
+    normalized.includes("pass this through to servhq")
+  );
+}
+
+async function extractLeadFromTranscript(transcript) {
+  const extractionResponse = await client.responses.create({
+    model: "gpt-5-mini",
+    input: [
+      {
+        role: "system",
+        content: EXTRACTION_PROMPT,
+      },
+      {
+        role: "user",
+        content: transcript,
+      },
+    ],
+  });
+
+  return (
+    safeJsonParse(extractionResponse.output_text) || {
+      service: "unknown",
+      is_complete: false,
+      missing_fields: [],
+      lead: emptyLead(),
+    }
+  );
+}
+
 const ASSISTANT_PROMPT = `
-You are Ask ServHQ, a helpful human-sounding concierge assistant for organising local services.
+You are ServHQ, a helpful human-sounding concierge assistant for organising local services.
 
 Your goal is to collect only the core details needed to organise a free quote, while making the conversation feel natural and easy.
 
@@ -321,7 +372,7 @@ Behavior rules:
   "Thanks — what is your name please?"
 - When asking for the customer's phone number, say exactly:
   "Thanks — what’s the best phone number to reach you? We won’t call you yet — it’s just so our team can reach out when they have a quote ready."
-- Once all required fields are collected, say:
+- Once all required fields are collected, say exactly:
   "Perfect — I’ve got everything I need. I’ll now pass this through to ServHQ so the right partnered business can be matched to your job."
 - Do not ask any more questions after everything required is collected.
 `;
@@ -368,7 +419,7 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     return res.status(200).json({
       status: "ok",
-      message: "Ask ServHQ API is live",
+      message: "ServHQ API is live",
     });
   }
 
@@ -387,7 +438,7 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log("Incoming Ask ServHQ message:", message);
+    console.log("Incoming ServHQ message:", message);
     console.log("Normalized history length:", history.length);
 
     const assistantInput = [
@@ -412,79 +463,60 @@ export default async function handler(req, res) {
 
     const rawReply =
       assistantResponse.output_text ||
-      "Sorry — Ask ServHQ had trouble responding.";
+      "Sorry — ServHQ had trouble responding.";
 
     const transcript = buildConversationText(history, message);
 
-    const extractionResponse = await client.responses.create({
-      model: "gpt-5-mini",
-      input: [
-        {
-          role: "system",
-          content: EXTRACTION_PROMPT,
-        },
-        {
-          role: "user",
-          content: transcript,
-        },
-      ],
-    });
-
-    const extracted = safeJsonParse(extractionResponse.output_text) || {
-      service: "unknown",
-      is_complete: false,
-      missing_fields: [],
-      lead: {
-        service: "",
-        name: "",
-        phone: "",
-        email: "",
-        address: "",
-        job_type: "",
-        job_details: "",
-        preferred_datetime: "",
-      },
-    };
-
-    const lead = {
-      ...(extracted.lead || {}),
-      service: extracted.service || extracted.lead?.service || "unknown",
-    };
-
-    const reply = applyReplyOverrides(rawReply, extracted, history, message);
-
-    console.log("Extracted lead:", JSON.stringify(lead, null, 2));
-    console.log("Is complete:", extracted.is_complete);
-    console.log("Missing fields:", extracted.missing_fields || []);
-
+    let reply = rawReply;
     let submitted = false;
     let submissionError = null;
+    let extracted = null;
+    let lead = emptyLead();
 
-    if (extracted.is_complete && !hasAlreadySubmitted(history)) {
-      try {
-        console.log("Attempting to send lead email...");
-        await sendLeadEmail(lead, `${transcript}\nASSISTANT: ${reply}`);
-        submitted = true;
-        console.log("Lead email sent successfully.");
-      } catch (emailError) {
-        submissionError = emailError;
-        console.error("Lead email failed:", emailError);
+    if (shouldExtractNow(rawReply)) {
+      extracted = await extractLeadFromTranscript(transcript);
+
+      lead = {
+        ...(extracted.lead || {}),
+        service: extracted.service || extracted.lead?.service || "unknown",
+      };
+
+      console.log("Extracted lead:", JSON.stringify(lead, null, 2));
+      console.log("Is complete:", extracted.is_complete);
+      console.log("Missing fields:", extracted.missing_fields || []);
+
+      if (extracted.is_complete) {
+        reply = "Perfect — I’ve got everything I need. I’ll now pass this through to ServHQ so the right partnered business can be matched to your job.";
+
+        if (!hasAlreadySubmitted(history)) {
+          try {
+            console.log("Attempting to send lead email...");
+            await sendLeadEmail(lead, `${transcript}\nASSISTANT: ${reply}`);
+            submitted = true;
+            console.log("Lead email sent successfully.");
+          } catch (emailError) {
+            submissionError = emailError;
+            console.error("Lead email failed:", emailError);
+          }
+        }
+      } else {
+        reply = applyReplyOverrides(rawReply, extracted);
       }
     }
 
     return res.status(200).json({
       reply,
       submitted,
-      leadComplete: Boolean(extracted.is_complete),
+      leadComplete: Boolean(extracted?.is_complete),
       service: lead.service || "unknown",
-      missingFields: extracted.missing_fields || [],
+      missingFields: extracted?.missing_fields || [],
       submissionError: submissionError ? String(submissionError.message || submissionError) : null,
     });
   } catch (error) {
-    console.error("Ask ServHQ fatal error:", error);
+    console.error("ServHQ fatal error:", error);
 
     return res.status(500).json({
-      reply: "Sorry — Ask ServHQ had trouble responding.",
+      reply: "Sorry — ServHQ had trouble responding.",
     });
   }
 }
