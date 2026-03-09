@@ -169,6 +169,24 @@ async function sendLeadEmail(lead, transcript) {
   });
 }
 
+function applyReplyOverrides(reply, extracted) {
+  const missing = extracted?.missing_fields || [];
+
+  if (missing.length > 0) {
+    const nextField = missing[0];
+
+    if (nextField === "name") {
+      return "Thanks — what is your name please?";
+    }
+
+    if (nextField === "phone") {
+      return "Thanks — what’s the best phone number to reach you? We won’t call you yet — it’s just so our team can reach out when they have a quote ready.";
+    }
+  }
+
+  return reply;
+}
+
 const ASSISTANT_PROMPT = `
 You are Ask ServHQ, a concierge assistant for organising local services.
 
@@ -224,6 +242,10 @@ Rules:
   7. job details
   8. preferred date/time
 - If the user already gave multiple answers in one message, do not ask for them again.
+- When asking for the customer's name, say exactly:
+  "Thanks — what is your name please?"
+- When asking for the customer's phone number, say exactly:
+  "Thanks — what’s the best phone number to reach you? We won’t call you yet — it’s just so our team can reach out when they have a quote ready."
 - Once everything required is collected, reply with:
   "Perfect — I’ve got everything I need. I’ll now pass this through to ServHQ so the right partnered business can be matched to your job."
 - Do not ask any more questions after everything required is collected.
@@ -313,7 +335,7 @@ export default async function handler(req, res) {
       input: assistantInput,
     });
 
-    const reply =
+    const rawReply =
       assistantResponse.output_text ||
       "Sorry — Ask ServHQ had trouble responding.";
 
@@ -353,6 +375,8 @@ export default async function handler(req, res) {
       ...(extracted.lead || {}),
       service: extracted.service || extracted.lead?.service || "unknown",
     };
+
+    const reply = applyReplyOverrides(rawReply, extracted);
 
     console.log("Extracted lead:", JSON.stringify(lead, null, 2));
     console.log("Is complete:", extracted.is_complete);
