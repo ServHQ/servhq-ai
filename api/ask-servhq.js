@@ -169,28 +169,110 @@ async function sendLeadEmail(lead, transcript) {
   });
 }
 
-function applyReplyOverrides(reply, extracted) {
+function applyReplyOverrides(rawReply, extracted, history, latestMessage) {
   const missing = extracted?.missing_fields || [];
+  const lead = extracted?.lead || {};
+  const nextField = missing[0];
 
-  if (missing.length > 0) {
-    const nextField = missing[0];
-
-    if (nextField === "name") {
-      return "Thanks — what is your name please?";
-    }
-
-    if (nextField === "phone") {
-      return "Thanks — what’s the best phone number to reach you? We won’t call you yet — it’s just so our team can reach out when they have a quote ready.";
-    }
+  if (!nextField) {
+    return "Perfect — I’ve got everything I need. I’ll now pass this through to ServHQ so the right partnered business can be matched to your job.";
   }
 
-  return reply;
+  if (nextField === "service") {
+    return "No worries — what service do you need help with?";
+  }
+
+  if (nextField === "name") {
+    if (lead.service && lead.service !== "unknown") {
+      const serviceLabel = String(lead.service).replace(/_/g, " ");
+      return `Got it — ${serviceLabel}. What is your name please?`;
+    }
+    return "Thanks — what is your name please?";
+  }
+
+  if (nextField === "phone") {
+    return "Thanks — what’s the best phone number to reach you? We won’t call you yet — it’s just so our team can reach out when they have a quote ready.";
+  }
+
+  if (nextField === "email") {
+    return "Perfect — what’s the best email address for the quote?";
+  }
+
+  if (nextField === "address") {
+    return "Thanks — what’s the full address for the job, including postcode?";
+  }
+
+  if (nextField === "job_type") {
+    if (lead.service === "cleaning") {
+      return "Got it — is this a regular clean, deep clean, or vacate clean?";
+    }
+
+    if (lead.service === "lawn_mowing") {
+      return "Got it — is this just a regular lawn mow, a yard clean-up, or hedge trimming as well?";
+    }
+
+    if (lead.service === "car_detailing") {
+      return "Got it — are you after an interior detail, full detail, or cut and polish?";
+    }
+
+    if (lead.service === "pressure_washing") {
+      return "Got it — what needs pressure washing?";
+    }
+
+    if (lead.service === "pest_control") {
+      return "Got it — what kind of pest issue are you dealing with?";
+    }
+
+    return "Got it — what type of job is it?";
+  }
+
+  if (nextField === "job_details") {
+    if (lead.service === "cleaning") {
+      return "Can you briefly describe the job — number of bedrooms and bathrooms, plus anything specific you want looked after?";
+    }
+
+    if (lead.service === "lawn_mowing") {
+      return "Can you briefly describe the yard — front, back, approximate size, and whether it’s overgrown?";
+    }
+
+    if (lead.service === "car_detailing") {
+      return "Can you briefly describe the vehicle — make/model and overall condition?";
+    }
+
+    if (lead.service === "pressure_washing") {
+      return "Can you briefly describe the area and condition so we can quote it properly?";
+    }
+
+    if (lead.service === "pest_control") {
+      return "Can you briefly describe where the issue is and how bad it is?";
+    }
+
+    return "Can you briefly describe the job so we can quote it properly?";
+  }
+
+  if (nextField === "preferred_datetime") {
+    if (lead.service === "cleaning") {
+      return "Perfect — what’s your preferred date and time for the clean?";
+    }
+
+    if (lead.service === "lawn_mowing") {
+      return "Perfect — what’s your preferred date and time for the lawn mowing?";
+    }
+
+    if (lead.service === "car_detailing") {
+      return "Perfect — what’s your preferred date and time for the detail?";
+    }
+
+    return "Perfect — what’s your preferred date and time?";
+  }
+
+  return rawReply;
 }
 
 const ASSISTANT_PROMPT = `
-You are Ask ServHQ, a concierge assistant for organising local services.
+You are Ask ServHQ, a helpful human-sounding concierge assistant for organising local services.
 
-Your job is to collect a simple quote request with only the core details needed, then stop asking questions.
+Your goal is to collect only the core details needed to organise a free quote, while making the conversation feel natural and easy.
 
 Supported services:
 - cleaning
@@ -199,7 +281,7 @@ Supported services:
 - pressure washing
 - pest control
 
-Collect only these required fields:
+Required fields:
 1. service
 2. full name
 3. phone number
@@ -217,6 +299,7 @@ How to interpret the fields:
   - car detailing: interior detail, full detail, cut and polish
   - pressure washing: driveway, house exterior, paths, patio
   - pest control: ants, cockroaches, spiders, termites
+
 - "basic job details" = a short description that helps us understand the job without asking too many questions
   Examples:
   - cleaning: bedrooms/bathrooms + any main concern
@@ -225,28 +308,20 @@ How to interpret the fields:
   - pressure washing: what areas + rough size/condition
   - pest control: pest issue + where the problem is
 
-Rules:
-- Ask only ONE question at a time.
-- Keep replies short, helpful, and professional.
-- Never invent providers, prices, availability, or confirmed bookings.
-- Do not ask long checklists.
-- Do not ask unnecessary follow-up questions once you have enough for a lead.
-- If the service is unclear, ask what service they need first.
-- Prioritize in this order:
-  1. service
-  2. name
-  3. phone
-  4. email
-  5. address
-  6. job type
-  7. job details
-  8. preferred date/time
-- If the user already gave multiple answers in one message, do not ask for them again.
+Behavior rules:
+- Sound like a real assistant, not a form.
+- Ask only one question at a time.
+- Keep replies short, clear, and natural.
+- If the user already gave a detail, do not ask for it again.
+- If the service is obvious from the user's message, do not ask what service they need.
+- If the job type is obvious from the user's message, do not ask for it again.
+- Briefly acknowledge what the user has already told you before asking the next question.
+- Never invent pricing, availability, providers, or confirmed bookings.
 - When asking for the customer's name, say exactly:
   "Thanks — what is your name please?"
 - When asking for the customer's phone number, say exactly:
   "Thanks — what’s the best phone number to reach you? We won’t call you yet — it’s just so our team can reach out when they have a quote ready."
-- Once everything required is collected, reply with:
+- Once all required fields are collected, say:
   "Perfect — I’ve got everything I need. I’ll now pass this through to ServHQ so the right partnered business can be matched to your job."
 - Do not ask any more questions after everything required is collected.
 `;
@@ -376,7 +451,7 @@ export default async function handler(req, res) {
       service: extracted.service || extracted.lead?.service || "unknown",
     };
 
-    const reply = applyReplyOverrides(rawReply, extracted);
+    const reply = applyReplyOverrides(rawReply, extracted, history, message);
 
     console.log("Extracted lead:", JSON.stringify(lead, null, 2));
     console.log("Is complete:", extracted.is_complete);
