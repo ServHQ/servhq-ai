@@ -41,7 +41,7 @@ function historyForModel(history) {
   return history.filter((m) => !String(m.content || "").startsWith("[LEAD_SUBMITTED]"));
 }
 
-function buildConversationText(history, latestUserMessage) {
+function buildConversationText(history, latestUserMessage = "") {
   const lines = [];
 
   for (const msg of history) {
@@ -49,7 +49,10 @@ function buildConversationText(history, latestUserMessage) {
     lines.push(`${msg.role.toUpperCase()}: ${msg.content}`);
   }
 
-  lines.push(`USER: ${latestUserMessage}`);
+  if (latestUserMessage) {
+    lines.push(`USER: ${latestUserMessage}`);
+  }
+
   return lines.join("\n");
 }
 
@@ -80,6 +83,7 @@ function buildEmailHtml(lead, transcript) {
     ["Job type", lead.job_type],
     ["Job details", lead.job_details],
     ["Preferred date/time", lead.preferred_datetime],
+    ["Estimated price range", lead.quote_range || ""],
   ];
 
   const rows = [...commonFields, ...serviceFields]
@@ -118,6 +122,7 @@ function buildEmailText(lead, transcript) {
     `Job type: ${formatValue(lead.job_type)}`,
     `Job details: ${formatValue(lead.job_details)}`,
     `Preferred date/time: ${formatValue(lead.preferred_datetime)}`,
+    `Estimated price range: ${formatValue(lead.quote_range)}`,
     "",
     "Conversation transcript:",
     transcript,
@@ -178,7 +183,182 @@ function emptyLead() {
     job_type: "",
     job_details: "",
     preferred_datetime: "",
+    quote_range: "",
   };
+}
+
+function toLower(value) {
+  return String(value || "").toLowerCase();
+}
+
+function normalizeSpaces(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function findBedroomCount(text) {
+  const match = String(text || "").match(/(\d+)\s*(bed|beds|bedroom|bedrooms)\b/i);
+  return match ? Number(match[1]) : null;
+}
+
+function detectCleaningTier(lead) {
+  const combined = `${lead.job_type || ""} ${lead.job_details || ""}`.toLowerCase();
+
+  if (
+    combined.includes("regular") ||
+    combined.includes("every 2 weeks") ||
+    combined.includes("every fortnight") ||
+    combined.includes("fortnight") ||
+    combined.includes("weekly")
+  ) {
+    return "regular";
+  }
+
+  if (
+    combined.includes("one off") ||
+    combined.includes("one-off") ||
+    combined.includes("deep clean") ||
+    combined.includes("deep") ||
+    combined.includes("vacate") ||
+    combined.includes("once off")
+  ) {
+    return "one_off";
+  }
+
+  return null;
+}
+
+function detectLawnSize(lead) {
+  const combined = `${lead.job_type || ""} ${lead.job_details || ""}`.toLowerCase();
+
+  if (combined.includes("small")) return "small";
+  if (combined.includes("medium")) return "medium";
+  if (combined.includes("large")) return "large";
+
+  return null;
+}
+
+function detectVehicleType(lead) {
+  const combined = `${lead.job_type || ""} ${lead.job_details || ""}`.toLowerCase();
+
+  if (combined.includes("sedan")) return "sedan";
+  if (combined.includes("suv")) return "suv";
+  if (combined.includes("4wd") || combined.includes("4 wd") || combined.includes("four wheel drive")) return "4wd";
+
+  return null;
+}
+
+function detectDetailPackage(lead) {
+  const combined = `${lead.job_type || ""} ${lead.job_details || ""}`.toLowerCase();
+
+  if (combined.includes("cut and polish") || combined.includes("cut & polish")) {
+    return "interior_exterior_cut_polish";
+  }
+
+  if (
+    combined.includes("interior and exterior") ||
+    combined.includes("interior & exterior") ||
+    combined.includes("full detail") ||
+    combined.includes("interior detail") ||
+    combined.includes("exterior detail")
+  ) {
+    return "interior_exterior";
+  }
+
+  return null;
+}
+
+function detectPestSize(lead) {
+  const combined = `${lead.job_type || ""} ${lead.job_details || ""}`.toLowerCase();
+
+  if (combined.includes("small")) return "small";
+  if (combined.includes("medium")) return "medium";
+  if (combined.includes("large")) return "large";
+
+  return null;
+}
+
+function getQuoteRange(lead) {
+  const service = toLower(lead.service);
+
+  if (service === "cleaning") {
+    const tier = detectCleaningTier(lead);
+    const beds = findBedroomCount(lead.job_details);
+
+    if (!tier || !beds) return null;
+
+    if (tier === "regular") {
+      if (beds === 2) return { min: 85, max: 100 };
+      if (beds === 3) return { min: 100, max: 130 };
+      if (beds >= 4) return { min: 130, max: 150 };
+    }
+
+    if (tier === "one_off") {
+      if (beds === 2) return { min: 100, max: 130 };
+      if (beds === 3) return { min: 130, max: 160 };
+      if (beds >= 4) return { min: 160, max: 190 };
+    }
+
+    return null;
+  }
+
+  if (service === "lawn_mowing") {
+    const size = detectLawnSize(lead);
+    if (!size) return null;
+
+    if (size === "small") return { min: 80, max: 100 };
+    if (size === "medium") return { min: 100, max: 120 };
+    if (size === "large") return { min: 120, max: 150 };
+
+    return null;
+  }
+
+  if (service === "car_detailing") {
+    const pkg = detectDetailPackage(lead);
+    const vehicle = detectVehicleType(lead);
+
+    if (!pkg || !vehicle) return null;
+
+    if (pkg === "interior_exterior") {
+      if (vehicle === "sedan") return { min: 300, max: 350 };
+      if (vehicle === "suv") return { min: 380, max: 400 };
+      if (vehicle === "4wd") return { min: 400, max: 450 };
+    }
+
+    if (pkg === "interior_exterior_cut_polish") {
+      if (vehicle === "sedan") return { min: 900, max: 1000 };
+      if (vehicle === "suv") return { min: 1000, max: 1100 };
+      if (vehicle === "4wd") return { min: 1100, max: 1300 };
+    }
+
+    return null;
+  }
+
+  if (service === "pest_control") {
+    const size = detectPestSize(lead);
+    if (!size) return null;
+
+    if (size === "small") return { min: 250, max: 350 };
+    if (size === "medium") return { min: 350, max: 400 };
+    if (size === "large") return { min: 400, max: 750 };
+
+    return null;
+  }
+
+  return null;
+}
+
+function formatCurrency(amount) {
+  return `$${Number(amount).toLocaleString("en-AU")}`;
+}
+
+function buildQuoteReply(lead) {
+  const range = getQuoteRange(lead);
+
+  if (!range) {
+    return "I’ve got everything I need for that. Our team will contact you with a more accurate quote. Did you want me to organise a quote and get the team organising a partnered business in your area now?";
+  }
+
+  return `The price ranges from ${formatCurrency(range.min)} to ${formatCurrency(range.max)} but our team will contact you with a more accurate quote. Did you want me to organise a quote and get the team organising a partnered business in your area now?`;
 }
 
 function applyReplyOverrides(rawReply, extracted) {
@@ -187,7 +367,7 @@ function applyReplyOverrides(rawReply, extracted) {
   const nextField = missing[0];
 
   if (!nextField) {
-    return "Perfect — I’ve got everything I need for that. Is there any other services you are trying to get taken care of while your here?";
+    return buildQuoteReply(lead);
   }
 
   if (nextField === "service") {
@@ -224,7 +404,7 @@ function applyReplyOverrides(rawReply, extracted) {
     }
 
     if (lead.service === "car_detailing") {
-      return "Are you after an interior detail, full detail, or cut and polish?";
+      return "Are you after an interior and exterior detail, or interior and exterior plus cut and polish?";
     }
 
     if (lead.service === "pressure_washing") {
@@ -248,7 +428,7 @@ function applyReplyOverrides(rawReply, extracted) {
     }
 
     if (lead.service === "car_detailing") {
-      return "Can you briefly describe the vehicle — make/model and overall condition?";
+      return "Can you briefly describe the vehicle — sedan, SUV or 4WD — and overall condition?";
     }
 
     if (lead.service === "pressure_washing") {
@@ -256,7 +436,7 @@ function applyReplyOverrides(rawReply, extracted) {
     }
 
     if (lead.service === "pest_control") {
-      return "Can you briefly describe where the issue is and how bad it is?";
+      return "Can you briefly describe the property size — small, medium or large — and where the issue is?";
     }
 
     return "Can you briefly describe the job so we can quote it properly?";
@@ -289,7 +469,9 @@ function shouldExtractNow(reply) {
   return (
     normalized.includes("i’ve got everything i need") ||
     normalized.includes("i've got everything i need") ||
-    normalized.includes("pass this through to servhq")
+    normalized.includes("pass this through to servhq") ||
+    normalized.includes("did you want me to organise a quote") ||
+    normalized.includes("organising a partnered business in your area now")
   );
 }
 
@@ -318,8 +500,50 @@ function looksLikeNoMoreServices(message) {
   return exactMatches.has(normalized);
 }
 
+function looksLikeQuoteConfirmation(message) {
+  const normalized = normalizeSpaces(message).toLowerCase().replace(/[^\w\s]/g, "");
+
+  const confirmations = [
+    "yes",
+    "yes please",
+    "please do",
+    "do it",
+    "book it",
+    "organise it",
+    "organize it",
+    "go ahead",
+    "yep",
+    "yep please",
+    "yeah",
+    "yeah please",
+    "sure",
+    "sounds good",
+    "that works",
+    "lets do it",
+    "let's do it",
+    "please organise it",
+    "please organize it",
+  ];
+
+  return confirmations.includes(normalized);
+}
+
 function hasSubmittedMarker(history) {
   return history.some((m) => String(m.content || "").startsWith("[LEAD_SUBMITTED]"));
+}
+
+function getLastAssistantMessage(history) {
+  const assistants = [...history].reverse().filter((m) => m.role === "assistant");
+  return assistants.length ? String(assistants[0].content || "") : "";
+}
+
+function isQuotePromptMessage(content) {
+  const normalized = String(content || "").toLowerCase();
+  return (
+    normalized.includes("the price ranges from") ||
+    normalized.includes("our team will contact you with a more accurate quote") ||
+    normalized.includes("did you want me to organise a quote")
+  );
 }
 
 async function extractLeadFromTranscript(transcript) {
@@ -337,14 +561,27 @@ async function extractLeadFromTranscript(transcript) {
     ],
   });
 
-  return (
-    safeJsonParse(extractionResponse.output_text) || {
-      service: "unknown",
-      is_complete: false,
-      missing_fields: [],
-      lead: emptyLead(),
-    }
-  );
+  const extracted = safeJsonParse(extractionResponse.output_text) || {
+    service: "unknown",
+    is_complete: false,
+    missing_fields: [],
+    lead: emptyLead(),
+  };
+
+  const lead = {
+    ...(extracted.lead || {}),
+    service: extracted.service || extracted.lead?.service || "unknown",
+  };
+
+  const range = getQuoteRange(lead);
+  if (range) {
+    lead.quote_range = `${formatCurrency(range.min)} to ${formatCurrency(range.max)}`;
+  }
+
+  return {
+    ...extracted,
+    lead,
+  };
 }
 
 const ASSISTANT_PROMPT = `
@@ -374,7 +611,7 @@ How to interpret the fields:
   Examples:
   - cleaning: regular clean, deep clean, vacate clean
   - lawn mowing: lawn mow, yard clean-up, hedge trim
-  - car detailing: interior detail, full detail, cut and polish
+  - car detailing: interior and exterior detail, interior and exterior plus cut and polish
   - pressure washing: driveway, house exterior, paths, patio
   - pest control: ants, cockroaches, spiders, termites
 
@@ -382,9 +619,9 @@ How to interpret the fields:
   Examples:
   - cleaning: bedrooms/bathrooms + any main concern
   - lawn mowing: last mowed / overgrown / any extras
-  - car detailing: vehicle make/model + condition
+  - car detailing: vehicle type + condition
   - pressure washing: what areas + rough size/condition
-  - pest control: pest issue + where the problem is
+  - pest control: property size + where the issue is
 
 Behavior rules:
 - Sound like a real assistant, not a form.
@@ -399,13 +636,12 @@ Behavior rules:
 - If the user asks for another service after one has already been completed, reuse their existing contact details and address unless they change them.
 - Briefly acknowledge what the user has already told you before asking the next question, but keep it concise.
 - Never invent pricing, availability, providers, or confirmed bookings.
+- Do not quote prices yourself. The system will handle pricing.
 - When asking for the customer's name, say exactly:
   "What is your name please?"
 - When asking for the customer's phone number, say exactly:
   "What’s the best phone number to reach you? We won’t call you yet — it’s just so our team can reach out when they have a quote ready."
-- Once all required fields are collected, say exactly:
-  "Perfect — I’ve got everything I need for that. Is there any other services you are trying to get taken care of while your here?"
-- Do not ask any more questions after everything required is collected unless the user wants another service.
+- Once all required fields are collected, reply briefly and stop asking more questions. The system will handle the quote prompt next.
 `;
 
 const EXTRACTION_PROMPT = `
@@ -470,6 +706,8 @@ export default async function handler(req, res) {
       });
     }
 
+    const lastAssistantMessage = getLastAssistantMessage(history);
+
     if (looksLikeNoMoreServices(message) && hasSubmittedMarker(history)) {
       return res.status(200).json({
         reply: "Perfect — you’re all set. Our team will now work on the quote request and be in touch.",
@@ -478,6 +716,37 @@ export default async function handler(req, res) {
         service: "unknown",
         missingFields: [],
         submissionError: null,
+      });
+    }
+
+    if (isQuotePromptMessage(lastAssistantMessage) && looksLikeQuoteConfirmation(message)) {
+      const transcriptFromHistory = buildConversationText(history);
+      const extracted = await extractLeadFromTranscript(transcriptFromHistory);
+      const lead = extracted.lead || emptyLead();
+
+      let submitted = false;
+      let submissionError = null;
+
+      try {
+        console.log("Attempting to send confirmed quote lead email...");
+        await sendLeadEmail(
+          lead,
+          `${transcriptFromHistory}\nUSER: ${message}\nASSISTANT: Perfect — I’ve got that organised. Is there any other services you are trying to get taken care of while your here?`
+        );
+        submitted = true;
+        console.log("Confirmed quote lead email sent successfully.");
+      } catch (emailError) {
+        submissionError = emailError;
+        console.error("Confirmed quote lead email failed:", emailError);
+      }
+
+      return res.status(200).json({
+        reply: "Perfect — I’ve got that organised. Is there any other services you are trying to get taken care of while your here?",
+        submitted,
+        leadComplete: true,
+        service: lead.service || "unknown",
+        missingFields: [],
+        submissionError: submissionError ? String(submissionError.message || submissionError) : null,
       });
     }
 
@@ -518,28 +787,14 @@ export default async function handler(req, res) {
 
     if (shouldExtractNow(rawReply)) {
       extracted = await extractLeadFromTranscript(transcript);
-
-      lead = {
-        ...(extracted.lead || {}),
-        service: extracted.service || extracted.lead?.service || "unknown",
-      };
+      lead = extracted.lead || emptyLead();
 
       console.log("Extracted lead:", JSON.stringify(lead, null, 2));
       console.log("Is complete:", extracted.is_complete);
       console.log("Missing fields:", extracted.missing_fields || []);
 
       if (extracted.is_complete) {
-        reply = "Perfect — I’ve got everything I need for that. Is there any other services you are trying to get taken care of while your here?";
-
-        try {
-          console.log("Attempting to send lead email...");
-          await sendLeadEmail(lead, `${transcript}\nASSISTANT: ${reply}`);
-          submitted = true;
-          console.log("Lead email sent successfully.");
-        } catch (emailError) {
-          submissionError = emailError;
-          console.error("Lead email failed:", emailError);
-        }
+        reply = buildQuoteReply(lead);
       } else {
         reply = applyReplyOverrides(rawReply, extracted);
       }
