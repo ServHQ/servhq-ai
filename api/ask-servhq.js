@@ -393,7 +393,131 @@ function detectPestSize(lead) {
   return null;
 }
 
+function detectPressureWashingType(lead) {
+  const combined = `${lead.job_type || ""} ${lead.job_details || ""}`.toLowerCase();
+
+  if (
+    combined.includes("driveway") ||
+    combined.includes("concrete") ||
+    combined.includes("path") ||
+    combined.includes("pathway") ||
+    combined.includes("footpath") ||
+    combined.includes("walkway") ||
+    combined.includes("side path") ||
+    combined.includes("outside home") ||
+    combined.includes("around the house")
+  ) {
+    return "concrete driveway / paths";
+  }
+
+  if (
+    combined.includes("house") ||
+    combined.includes("house exterior") ||
+    combined.includes("outside walls") ||
+    combined.includes("external walls") ||
+    combined.includes("exterior walls") ||
+    combined.includes("weatherboard") ||
+    combined.includes("render")
+  ) {
+    return "house exterior";
+  }
+
+  if (
+    combined.includes("patio") ||
+    combined.includes("alfresco") ||
+    combined.includes("courtyard") ||
+    combined.includes("entertainment area") ||
+    combined.includes("verandah") ||
+    combined.includes("veranda")
+  ) {
+    return "patio / outdoor area";
+  }
+
+  if (
+    combined.includes("deck") ||
+    combined.includes("timber deck") ||
+    combined.includes("wood deck")
+  ) {
+    return "deck";
+  }
+
+  if (
+    combined.includes("fence") ||
+    combined.includes("retaining wall") ||
+    combined.includes("wall")
+  ) {
+    return "fence / wall";
+  }
+
+  if (
+    combined.includes("roof") ||
+    combined.includes("gutter") ||
+    combined.includes("gutters")
+  ) {
+    return "roof / gutters";
+  }
+
+  if (
+    combined.includes("pool area") ||
+    combined.includes("pool surround") ||
+    combined.includes("poolside")
+  ) {
+    return "pool area";
+  }
+
+  return null;
+}
+
+function detectPressureWashSize(lead) {
+  const combined = `${lead.job_type || ""} ${lead.job_details || ""}`.toLowerCase();
+
+  if (
+    combined.includes("small") ||
+    combined.includes("single driveway") ||
+    combined.includes("front path") ||
+    combined.includes("small area") ||
+    combined.includes("just the driveway") ||
+    combined.includes("just the path")
+  ) {
+    return "small";
+  }
+
+  if (
+    combined.includes("large") ||
+    combined.includes("big") ||
+    combined.includes("double driveway") ||
+    combined.includes("whole house") ||
+    combined.includes("multiple areas") ||
+    combined.includes("large area")
+  ) {
+    return "large";
+  }
+
+  if (
+    combined.includes("medium") ||
+    combined.includes("average") ||
+    combined.includes("standard")
+  ) {
+    return "medium";
+  }
+
+  return null;
+}
+
 function isGenericLawnResponse(value) {
+  const normalized = normalizeSpaces(value).toLowerCase();
+  return (
+    !normalized ||
+    normalized === "all good" ||
+    normalized === "nothing else" ||
+    normalized === "no extras" ||
+    normalized === "none" ||
+    normalized === "n/a" ||
+    normalized === "na"
+  );
+}
+
+function isGenericPressureWashResponse(value) {
   const normalized = normalizeSpaces(value).toLowerCase();
   return (
     !normalized ||
@@ -448,6 +572,22 @@ function inferMissingLeadFields(lead) {
     const tier = detectCleaningTier(next);
     if (tier === "regular") next.job_type = "regular clean";
     if (tier === "one_off") next.job_type = "one-off clean";
+  }
+
+  if (next.service === "pressure_washing") {
+    const inferredType = detectPressureWashingType(next);
+
+    if (!next.job_type && inferredType) {
+      next.job_type = inferredType;
+    }
+
+    if (!next.job_details && next.job_type) {
+      next.job_details = next.job_type;
+    }
+
+    if (isGenericPressureWashResponse(next.job_details) && next.job_type) {
+      next.job_details = next.job_type;
+    }
   }
 
   return next;
@@ -535,6 +675,58 @@ function getQuoteRange(lead) {
     return null;
   }
 
+  if (service === "pressure_washing") {
+    const type = detectPressureWashingType(lead);
+    let size = detectPressureWashSize(lead);
+
+    if (!type) return null;
+    if (!size) size = "medium";
+
+    if (type === "concrete driveway / paths") {
+      if (size === "small") return { min: 120, max: 180 };
+      if (size === "medium") return { min: 180, max: 280 };
+      if (size === "large") return { min: 280, max: 450 };
+    }
+
+    if (type === "house exterior") {
+      if (size === "small") return { min: 220, max: 320 };
+      if (size === "medium") return { min: 320, max: 480 };
+      if (size === "large") return { min: 480, max: 700 };
+    }
+
+    if (type === "patio / outdoor area") {
+      if (size === "small") return { min: 120, max: 200 };
+      if (size === "medium") return { min: 200, max: 320 };
+      if (size === "large") return { min: 320, max: 500 };
+    }
+
+    if (type === "deck") {
+      if (size === "small") return { min: 150, max: 220 };
+      if (size === "medium") return { min: 220, max: 350 };
+      if (size === "large") return { min: 350, max: 550 };
+    }
+
+    if (type === "fence / wall") {
+      if (size === "small") return { min: 150, max: 250 };
+      if (size === "medium") return { min: 250, max: 400 };
+      if (size === "large") return { min: 400, max: 650 };
+    }
+
+    if (type === "roof / gutters") {
+      if (size === "small") return { min: 250, max: 380 };
+      if (size === "medium") return { min: 380, max: 600 };
+      if (size === "large") return { min: 600, max: 900 };
+    }
+
+    if (type === "pool area") {
+      if (size === "small") return { min: 150, max: 250 };
+      if (size === "medium") return { min: 250, max: 400 };
+      if (size === "large") return { min: 400, max: 650 };
+    }
+
+    return null;
+  }
+
   return null;
 }
 
@@ -600,6 +792,7 @@ function hasExtraWork(lead) {
       combined.includes("mould") ||
       combined.includes("mold") ||
       combined.includes("multi area") ||
+      combined.includes("multiple areas") ||
       combined.includes("extra work")
     );
   }
@@ -777,7 +970,7 @@ function applyReplyOverrides(rawReply, extracted) {
     }
 
     if (lead.service === "pressure_washing") {
-      return "What needs pressure washing?";
+      return "What needs pressure washing? For example driveway, paths, patio, house exterior or something else.";
     }
 
     if (lead.service === "pest_control") {
@@ -801,7 +994,7 @@ function applyReplyOverrides(rawReply, extracted) {
     }
 
     if (lead.service === "pressure_washing") {
-      return "Can you briefly describe the area and condition so we can quote it properly?";
+      return "Can you briefly describe the area and condition — for example small driveway, patio with mould, or concrete around the house?";
     }
 
     if (lead.service === "pest_control") {
@@ -822,6 +1015,10 @@ function applyReplyOverrides(rawReply, extracted) {
 
     if (lead.service === "car_detailing") {
       return "What’s your preferred date and time for the detail?\nIf we can’t find a provider available at that exact date and time, we’ll get as close as possible and let you know.";
+    }
+
+    if (lead.service === "pressure_washing") {
+      return "What’s your preferred date and time for the pressure washing?\nIf we can’t find a provider available at that exact date and time, we’ll get as close as possible and let you know.";
     }
 
     return "What’s your preferred date and time?\nIf we can’t find a provider available at that exact date and time, we’ll get as close as possible and let you know.";
@@ -1073,7 +1270,7 @@ function looksLikeNoiseOrCorrection(message) {
 async function extractLeadFromTranscript(transcript) {
   const extractionResponse = await client.responses.create({
     model: "gpt-4o-mini",
-    max_output_tokens: 220,
+    max_output_tokens: 260,
     input: [
       {
         role: "system",
@@ -1198,6 +1395,8 @@ Rules:
 - If the job type is obvious, do not ask for it again.
 - For lawn mowing, if the user clearly wants a standard mow and already gave yard details, do not ask again if it is a regular mow.
 - For lawn mowing, when asking for job details, ask specifically for lawn size and any extras so a rough price can be given.
+- For pressure washing, treat answers like driveway, concrete, paths, patio, house exterior, deck, fence, roof, gutters, pool area, or concrete outside home as valid job types.
+- For pressure washing, if the user says something like "concrete outside home", "driveway", or "paths around the house", do not ask "What needs pressure washing?" again.
 - If the user makes a typo, speech mistake, or irrelevant interruption near quote stage, do not restart discovery.
 - If the user confirms after a quote prompt, do not restart discovery.
 - Reuse contact details and address for another service unless the user changes them.
@@ -1235,6 +1434,15 @@ Rules:
 - If a phone number contains spaces, reconstruct it into normal format.
 - For lawn mowing, if the conversation clearly indicates a standard mow and includes yard details, infer job_type as "regular lawn mow" if needed.
 - For lawn mowing, if the user gives generic job details like "all good", "none", or "no extras", keep the lead complete and allow pricing to default to a medium lawn if size is still unknown.
+- For pressure washing, map common user answers into a usable job_type when obvious:
+  - driveway / concrete driveway / concrete outside home / paths / pathways / footpath / concrete around house -> "concrete driveway / paths"
+  - patio / alfresco / courtyard / verandah -> "patio / outdoor area"
+  - house / house exterior / exterior walls / outside walls -> "house exterior"
+  - deck -> "deck"
+  - fence / wall -> "fence / wall"
+  - roof / gutters -> "roof / gutters"
+  - pool area / pool surround -> "pool area"
+- If the user already answered what needs pressure washing in plain language, do not leave job_type blank.
 - "service" must be one of:
   cleaning, lawn_mowing, car_detailing, pressure_washing, pest_control, unknown
 - "is_complete" must only be true when all of these fields are present:
