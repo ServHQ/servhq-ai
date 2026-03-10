@@ -255,29 +255,47 @@ function findBedroomCount(text) {
   return match ? Number(match[1]) : null;
 }
 
-function detectCleaningTier(lead) {
+function hasRegularCleaningIntent(lead) {
   const combined = `${lead.job_type || ""} ${lead.job_details || ""}`.toLowerCase();
 
-  if (
+  return (
     combined.includes("regular") ||
-    combined.includes("every 2 weeks") ||
-    combined.includes("every fortnight") ||
+    combined.includes("ongoing") ||
+    combined.includes("weekly") ||
     combined.includes("fortnight") ||
-    combined.includes("weekly")
-  ) {
-    return "regular";
-  }
+    combined.includes("fortnightly") ||
+    combined.includes("every 2 weeks") ||
+    combined.includes("every two weeks") ||
+    combined.includes("every fortnight")
+  );
+}
 
-  if (
-    combined.includes("one off") ||
-    combined.includes("one-off") ||
+function hasDeepCleaningIntent(lead) {
+  const combined = `${lead.job_type || ""} ${lead.job_details || ""}`.toLowerCase();
+
+  return (
     combined.includes("deep clean") ||
     combined.includes("deep") ||
+    combined.includes("start off with a deep clean") ||
+    combined.includes("initial deep clean") ||
+    combined.includes("first clean deep") ||
+    combined.includes("move in") ||
+    combined.includes("move out") ||
+    combined.includes("move-out") ||
     combined.includes("vacate") ||
-    combined.includes("once off")
-  ) {
-    return "one_off";
-  }
+    combined.includes("bond clean") ||
+    combined.includes("once off") ||
+    combined.includes("one off") ||
+    combined.includes("one-off")
+  );
+}
+
+function detectCleaningTier(lead) {
+  const hasRegular = hasRegularCleaningIntent(lead);
+  const hasDeep = hasDeepCleaningIntent(lead);
+
+  if (hasRegular) return "regular";
+  if (hasDeep) return "one_off";
 
   return null;
 }
@@ -470,6 +488,81 @@ function formatCurrency(amount) {
   return `$${Number(amount).toLocaleString("en-AU")}`;
 }
 
+function hasExtraWork(lead) {
+  const combined = `${lead.job_type || ""} ${lead.job_details || ""}`.toLowerCase();
+  const service = toLower(lead.service);
+
+  if (service === "cleaning") {
+    return (
+      combined.includes("deep clean") ||
+      combined.includes("deep") ||
+      combined.includes("start off with a deep clean") ||
+      combined.includes("initial deep clean") ||
+      combined.includes("move in") ||
+      combined.includes("move out") ||
+      combined.includes("vacate") ||
+      combined.includes("bond clean") ||
+      combined.includes("oven") ||
+      combined.includes("walls") ||
+      combined.includes("extra work") ||
+      combined.includes("pets") ||
+      combined.includes("pet hair")
+    );
+  }
+
+  if (service === "lawn_mowing") {
+    return (
+      combined.includes("overgrown") ||
+      combined.includes("clippings removed") ||
+      combined.includes("clippings taken away") ||
+      combined.includes("take away") ||
+      combined.includes("edging") ||
+      combined.includes("hedge") ||
+      combined.includes("whipper snip") ||
+      combined.includes("yard clean") ||
+      combined.includes("cleanup") ||
+      combined.includes("clean-up") ||
+      combined.includes("extra work")
+    );
+  }
+
+  if (service === "car_detailing") {
+    return (
+      combined.includes("pet hair") ||
+      combined.includes("stains") ||
+      combined.includes("mould") ||
+      combined.includes("mold") ||
+      combined.includes("heavily soiled") ||
+      combined.includes("excessively dirty") ||
+      combined.includes("engine bay") ||
+      combined.includes("extra work")
+    );
+  }
+
+  if (service === "pressure_washing") {
+    return (
+      combined.includes("heavy staining") ||
+      combined.includes("oil") ||
+      combined.includes("mould") ||
+      combined.includes("mold") ||
+      combined.includes("multi area") ||
+      combined.includes("extra work")
+    );
+  }
+
+  if (service === "pest_control") {
+    return (
+      combined.includes("severe") ||
+      combined.includes("multiple areas") ||
+      combined.includes("roof void") ||
+      combined.includes("large infestation") ||
+      combined.includes("extra work")
+    );
+  }
+
+  return false;
+}
+
 function buildQuoteReply(lead) {
   const range = getQuoteRange(lead);
 
@@ -478,8 +571,17 @@ function buildQuoteReply(lead) {
   }
 
   const service = toLower(lead.service);
+  const extras = hasExtraWork(lead);
 
   if (service === "lawn_mowing") {
+    if (extras) {
+      return `We can definitely take care of that. For a lawn like yours, the regular price usually ranges from ${formatCurrency(
+        range.min
+      )} to ${formatCurrency(
+        range.max
+      )} depending on the condition. For the extra work, our team will discuss that when they provide the quote. Would you like me to organise this for you now?`;
+    }
+
     return `We can definitely take care of that. For a lawn like yours, the price usually ranges from ${formatCurrency(
       range.min
     )} to ${formatCurrency(
@@ -488,6 +590,22 @@ function buildQuoteReply(lead) {
   }
 
   if (service === "cleaning") {
+    if (extras) {
+      if (hasRegularCleaningIntent(lead) && hasDeepCleaningIntent(lead)) {
+        return `We can definitely take care of that. For your home, the regular cleaning price usually ranges from ${formatCurrency(
+          range.min
+        )} to ${formatCurrency(
+          range.max
+        )} depending on the condition. For the deep clean, our team will discuss that when they provide the quote. Would you like me to organise this for you now?`;
+      }
+
+      return `We can definitely take care of that. For a home like yours, the regular cleaning price usually ranges from ${formatCurrency(
+        range.min
+      )} to ${formatCurrency(
+        range.max
+      )} depending on the condition. For the deep clean or extra work, our team will discuss that when they provide the quote. Would you like me to organise this for you now?`;
+    }
+
     return `We can definitely take care of that. For a home like yours, the price usually ranges from ${formatCurrency(
       range.min
     )} to ${formatCurrency(
@@ -496,6 +614,14 @@ function buildQuoteReply(lead) {
   }
 
   if (service === "car_detailing") {
+    if (extras) {
+      return `We can definitely take care of that. For a vehicle like yours, the base price usually ranges from ${formatCurrency(
+        range.min
+      )} to ${formatCurrency(
+        range.max
+      )} depending on the condition. For the extra work, our team will discuss that when they provide the quote. Would you like me to organise this for you now?`;
+    }
+
     return `We can definitely take care of that. For a vehicle like yours, the price usually ranges from ${formatCurrency(
       range.min
     )} to ${formatCurrency(
@@ -504,6 +630,14 @@ function buildQuoteReply(lead) {
   }
 
   if (service === "pest_control") {
+    if (extras) {
+      return `We can definitely take care of that. For a property like yours, the standard price usually ranges from ${formatCurrency(
+        range.min
+      )} to ${formatCurrency(
+        range.max
+      )} depending on the condition. For the additional work, our team will discuss that when they provide the quote. Would you like me to organise this for you now?`;
+    }
+
     return `We can definitely take care of that. For a property like yours, the price usually ranges from ${formatCurrency(
       range.min
     )} to ${formatCurrency(
@@ -512,11 +646,27 @@ function buildQuoteReply(lead) {
   }
 
   if (service === "pressure_washing") {
+    if (extras) {
+      return `We can definitely take care of that. For an area like yours, the standard price usually ranges from ${formatCurrency(
+        range.min
+      )} to ${formatCurrency(
+        range.max
+      )} depending on the condition. For the extra work, our team will discuss that when they provide the quote. Would you like me to organise this for you now?`;
+    }
+
     return `We can definitely take care of that. For an area like yours, the price usually ranges from ${formatCurrency(
       range.min
     )} to ${formatCurrency(
       range.max
     )} depending on the condition. Would you like me to organise this for you now?`;
+  }
+
+  if (extras) {
+    return `We can definitely take care of that. The standard price usually ranges from ${formatCurrency(
+      range.min
+    )} to ${formatCurrency(
+      range.max
+    )}. For the extra work, our team will discuss that when they provide the quote. Would you like me to organise this for you now?`;
   }
 
   return `We can definitely take care of that. The price usually ranges from ${formatCurrency(
@@ -668,6 +818,79 @@ function looksLikeNoMoreServices(message) {
   return exactMatches.has(normalized);
 }
 
+function looksLikeQuoteDecline(message) {
+  const normalized = normalizeSpaces(message)
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const exactDeclines = new Set([
+    "no",
+    "no thanks",
+    "nah",
+    "nah thanks",
+    "nope",
+    "not right now",
+    "not now",
+    "ill pass",
+    "i ll pass",
+    "pass",
+    "no thank you",
+    "dont worry",
+    "don't worry",
+    "not today",
+    "maybe later",
+    "just looking",
+    "just browsing",
+    "just pricing",
+    "just after a price",
+    "just after pricing",
+    "just getting a quote",
+    "just getting quotes",
+    "just seeing the price",
+    "just seeing prices",
+    "pricing only",
+    "quote only",
+    "just wanted a quote",
+    "just wanted pricing",
+    "leave it for now",
+    "i'll leave it",
+    "ill leave it",
+    "leave it",
+    "not this time",
+    "maybe another time",
+  ]);
+
+  if (exactDeclines.has(normalized)) return true;
+
+  const partialSignals = [
+    "just looking",
+    "just browsing",
+    "just pricing",
+    "just after a price",
+    "just after pricing",
+    "just getting a quote",
+    "just getting quotes",
+    "just wanted a quote",
+    "just wanted pricing",
+    "maybe later",
+    "not today",
+    "not right now",
+    "not now",
+    "leave it",
+    "leave it for now",
+    "i'll leave it",
+    "ill leave it",
+    "not this time",
+    "maybe another time",
+    "just seeing the price",
+    "just seeing prices",
+  ];
+
+  return partialSignals.some((signal) => normalized.includes(signal));
+}
+
 function looksLikeQuoteConfirmation(message) {
   const original = normalizeSpaces(message).toLowerCase();
   const normalized = original.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
@@ -760,6 +983,10 @@ function isQuotePromptMessage(content) {
   return (
     normalized.includes("the price ranges from") ||
     normalized.includes("the price usually ranges from") ||
+    normalized.includes("the regular price usually ranges from") ||
+    normalized.includes("the regular cleaning price usually ranges from") ||
+    normalized.includes("the base price usually ranges from") ||
+    normalized.includes("the standard price usually ranges from") ||
     normalized.includes("our team will contact you with a more accurate quote") ||
     normalized.includes("would you like me to go ahead and organise your quote now") ||
     normalized.includes("would you like me to organise this for you now") ||
@@ -1006,9 +1233,22 @@ export default async function handler(req, res) {
     }
 
     const quoteConfirmationIntent = looksLikeQuoteConfirmation(message);
+    const quoteDeclineIntent = looksLikeQuoteDecline(message);
     const quotePromptSeen =
       isQuotePromptMessage(lastAssistantMessage) ||
       conversationContainsQuotePrompt(history);
+
+    if (quotePromptSeen && quoteDeclineIntent) {
+      return res.status(200).json({
+        reply: "No worries at all, is there another service you would like to discuss?",
+        voiceReply: "No worries at all, is there another service you would like to discuss?",
+        submitted: false,
+        leadComplete: false,
+        service: "unknown",
+        missingFields: [],
+        submissionError: null,
+      });
+    }
 
     if (quotePromptSeen && quoteConfirmationIntent) {
       const result = await submitConfirmedLead({ history, message });
