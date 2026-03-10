@@ -223,6 +223,33 @@ function normalizeSpaces(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function normalizePhone(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length === 10 && digits.startsWith("0")) return digits;
+  if (digits.length === 11 && digits.startsWith("61")) return `0${digits.slice(2)}`;
+  return digits;
+}
+
+function normalizeEmail(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+
+  let cleaned = raw
+    .replace(/\s+at\s+/g, "@")
+    .replace(/\s+dot\s+/g, ".")
+    .replace(/\s+/g, "");
+
+  cleaned = cleaned.replace(/,+/g, ".").replace(/;+?/g, ".");
+
+  const emailMatch = cleaned.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+  return emailMatch ? emailMatch[0].toLowerCase() : cleaned;
+}
+
+function isLikelyValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
 function findBedroomCount(text) {
   const match = String(text || "").match(/(\d+)\s*(bed|beds|bedroom|bedrooms)\b/i);
   return match ? Number(match[1]) : null;
@@ -311,6 +338,64 @@ function detectPestSize(lead) {
   return null;
 }
 
+function inferMissingLeadFields(lead) {
+  const next = {
+    ...emptyLead(),
+    ...lead,
+  };
+
+  next.phone = normalizePhone(next.phone);
+  next.email = normalizeEmail(next.email);
+
+  if (next.service === "lawn_mowing") {
+    const combined = `${next.job_type || ""} ${next.job_details || ""}`.toLowerCase();
+
+    if (!next.job_type) {
+      if (
+        combined.includes("hedge") ||
+        combined.includes("yard clean") ||
+        combined.includes("yard cleanup") ||
+        combined.includes("yard clean-up")
+      ) {
+        if (combined.includes("hedge")) {
+          next.job_type = "lawn mowing with hedge trimming";
+        } else if (combined.includes("yard")) {
+          next.job_type = "yard clean-up";
+        }
+      } else {
+        next.job_type = "regular lawn mow";
+      }
+    }
+
+    if (!next.job_details && next.job_type) {
+      next.job_details = next.job_type;
+    }
+  }
+
+  if (next.service === "cleaning" && !next.job_type) {
+    const tier = detectCleaningTier(next);
+    if (tier === "regular") next.job_type = "regular clean";
+    if (tier === "one_off") next.job_type = "one-off clean";
+  }
+
+  return next;
+}
+
+function getMissingFieldsFromLead(lead) {
+  const missing = [];
+
+  if (!lead.service || lead.service === "unknown") missing.push("service");
+  if (!lead.name) missing.push("name");
+  if (!lead.phone) missing.push("phone");
+  if (!lead.email || !isLikelyValidEmail(lead.email)) missing.push("email");
+  if (!lead.address) missing.push("address");
+  if (!lead.job_type) missing.push("job_type");
+  if (!lead.job_details) missing.push("job_details");
+  if (!lead.preferred_datetime) missing.push("preferred_datetime");
+
+  return missing;
+}
+
 function getQuoteRange(lead) {
   const service = toLower(lead.service);
 
@@ -389,7 +474,7 @@ function buildQuoteReply(lead) {
   const range = getQuoteRange(lead);
 
   if (!range) {
-    return "We can definitely take care of that. Our team will contact you with a more accurate quote. Would you like me to go ahead and organise your quote now?";
+    return "We can definitely take care of that. Our team will contact you with a more accurate quote. Would you like me to organise this for you now?";
   }
 
   const service = toLower(lead.service);
@@ -399,7 +484,7 @@ function buildQuoteReply(lead) {
       range.min
     )} to ${formatCurrency(
       range.max
-    )} depending on the condition. Would you like me to go ahead and organise your quote now?`;
+    )} depending on the condition. Would you like me to organise this for you now?`;
   }
 
   if (service === "cleaning") {
@@ -407,7 +492,7 @@ function buildQuoteReply(lead) {
       range.min
     )} to ${formatCurrency(
       range.max
-    )} depending on the condition. Would you like me to go ahead and organise your quote now?`;
+    )} depending on the condition. Would you like me to organise this for you now?`;
   }
 
   if (service === "car_detailing") {
@@ -415,7 +500,7 @@ function buildQuoteReply(lead) {
       range.min
     )} to ${formatCurrency(
       range.max
-    )} depending on the condition. Would you like me to go ahead and organise your quote now?`;
+    )} depending on the condition. Would you like me to organise this for you now?`;
   }
 
   if (service === "pest_control") {
@@ -423,7 +508,7 @@ function buildQuoteReply(lead) {
       range.min
     )} to ${formatCurrency(
       range.max
-    )} depending on the condition. Would you like me to go ahead and organise your quote now?`;
+    )} depending on the condition. Would you like me to organise this for you now?`;
   }
 
   if (service === "pressure_washing") {
@@ -431,14 +516,14 @@ function buildQuoteReply(lead) {
       range.min
     )} to ${formatCurrency(
       range.max
-    )} depending on the condition. Would you like me to go ahead and organise your quote now?`;
+    )} depending on the condition. Would you like me to organise this for you now?`;
   }
 
   return `We can definitely take care of that. The price usually ranges from ${formatCurrency(
     range.min
   )} to ${formatCurrency(
     range.max
-  )}. Would you like me to go ahead and organise your quote now?`;
+  )}. Would you like me to organise this for you now?`;
 }
 
 function applyReplyOverrides(rawReply, extracted) {
@@ -584,11 +669,10 @@ function looksLikeNoMoreServices(message) {
 }
 
 function looksLikeQuoteConfirmation(message) {
-  const normalized = normalizeSpaces(message)
-    .toLowerCase()
-    .replace(/[^\w\s]/g, "");
+  const original = normalizeSpaces(message).toLowerCase();
+  const normalized = original.replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
 
-  const confirmations = [
+  const exactConfirmations = [
     "yes",
     "yes please",
     "please do",
@@ -613,9 +697,51 @@ function looksLikeQuoteConfirmation(message) {
     "go for it",
     "okay go ahead",
     "ok go ahead",
+    "organise this",
+    "organize this",
+    "yes lets do it",
+    "yes let's do it",
   ];
 
-  return confirmations.includes(normalized);
+  if (exactConfirmations.includes(normalized)) return true;
+
+  const positiveSignals = [
+    "yes",
+    "yeah",
+    "yep",
+    "lets do it",
+    "let's do it",
+    "go ahead",
+    "do it",
+    "book it",
+    "organise it",
+    "organize it",
+    "go for it",
+    "sounds good",
+    "that works",
+    "all good",
+  ];
+
+  const correctionSignals = [
+    "no sorry",
+    "sorry",
+    "i meant",
+    "meant to say",
+    "ignore that",
+    "wrong word",
+    "wrong message",
+    "mistake",
+    "typo",
+    "voice typo",
+  ];
+
+  const hasPositive = positiveSignals.some((s) => normalized.includes(s));
+  const hasCorrection = correctionSignals.some((s) => normalized.includes(s));
+
+  if (hasPositive) return true;
+  if (hasCorrection && hasPositive) return true;
+
+  return false;
 }
 
 function hasSubmittedMarker(history) {
@@ -636,6 +762,7 @@ function isQuotePromptMessage(content) {
     normalized.includes("the price usually ranges from") ||
     normalized.includes("our team will contact you with a more accurate quote") ||
     normalized.includes("would you like me to go ahead and organise your quote now") ||
+    normalized.includes("would you like me to organise this for you now") ||
     normalized.includes("did you want me to organise a quote")
   );
 }
@@ -643,6 +770,22 @@ function isQuotePromptMessage(content) {
 function conversationContainsQuotePrompt(history) {
   return history.some(
     (m) => m.role === "assistant" && isQuotePromptMessage(m.content)
+  );
+}
+
+function looksLikeNoiseOrCorrection(message) {
+  const normalized = normalizeSpaces(message).toLowerCase();
+  if (!normalized) return false;
+
+  const shortNoise = ["yellowstone", "hello", "test", "oops", "sorry", "ignore that"];
+  if (shortNoise.includes(normalized)) return true;
+
+  return (
+    normalized.includes("ignore that") ||
+    normalized.includes("wrong word") ||
+    normalized.includes("wrong message") ||
+    normalized.includes("meant to say") ||
+    normalized.includes("voice typo")
   );
 }
 
@@ -668,10 +811,15 @@ async function extractLeadFromTranscript(transcript) {
     lead: emptyLead(),
   };
 
-  const lead = {
+  let lead = {
     ...(extracted.lead || {}),
     service: extracted.service || extracted.lead?.service || "unknown",
   };
+
+  lead = inferMissingLeadFields(lead);
+
+  const missing_fields = getMissingFieldsFromLead(lead);
+  const is_complete = missing_fields.length === 0;
 
   const range = getQuoteRange(lead);
   if (range) {
@@ -683,6 +831,8 @@ async function extractLeadFromTranscript(transcript) {
   return {
     ...extracted,
     lead,
+    missing_fields,
+    is_complete,
   };
 }
 
@@ -761,7 +911,7 @@ How to interpret the fields:
 - "job type" = the main type of work needed for that service
   Examples:
   - cleaning: regular clean, deep clean, vacate clean
-  - lawn mowing: lawn mow, yard clean-up, hedge trim
+  - lawn mowing: regular lawn mow, yard clean-up, hedge trim
   - car detailing: interior and exterior detail, interior and exterior plus cut and polish
   - pressure washing: driveway, house exterior, paths, patio
   - pest control: ants, cockroaches, spiders, termites
@@ -769,7 +919,7 @@ How to interpret the fields:
 - "basic job details" = a short description that helps us understand the job without asking too many questions
   Examples:
   - cleaning: bedrooms/bathrooms + any main concern
-  - lawn mowing: last mowed / overgrown / any extras
+  - lawn mowing: size / overgrown / clippings / edging / extras
   - car detailing: vehicle type + condition
   - pressure washing: what areas + rough size/condition
   - pest control: property size + where the issue is
@@ -784,6 +934,9 @@ Behavior rules:
 - If the user already gave a detail, do not ask for it again.
 - If the service is obvious from the user's message, do not ask what service they need.
 - If the job type is obvious from the user's message, do not ask for it again.
+- For lawn mowing, if the user already clearly wants a normal mow and mentions yard size/extras, do not ask again whether it is a regular mow.
+- If the user says something that looks like a mistaken word, typo, voice transcription error, or irrelevant interruption while you are already at quote stage, do not restart the discovery flow. Briefly clarify once only, then continue from the existing stage.
+- If the user confirms after a quote prompt, do not ask discovery questions again.
 - If the user asks for another service after one has already been completed, reuse their existing contact details and address unless they change them.
 - Briefly acknowledge what the user has already told you before asking the next question, but keep it concise.
 - Never invent pricing, availability, providers, or confirmed bookings.
@@ -818,6 +971,9 @@ Return exactly this shape:
 
 Rules:
 - Use empty strings for unknown values.
+- If an email is spoken with spaces, reconstruct it into normal email format.
+- If a phone number contains spaces, reconstruct it into normal format.
+- For lawn mowing, if the conversation clearly indicates a standard mow and includes yard details, infer job_type as "regular lawn mow" if needed.
 - "service" must be one of:
   cleaning, lawn_mowing, car_detailing, pressure_washing, pest_control, unknown
 - "is_complete" must only be true when all of these fields are present:
@@ -876,7 +1032,7 @@ export default async function handler(req, res) {
       isQuotePromptMessage(lastAssistantMessage) ||
       conversationContainsQuotePrompt(history);
 
-    if (quoteConfirmationIntent && quotePromptSeen) {
+    if (quotePromptSeen && quoteConfirmationIntent) {
       const result = await submitConfirmedLead({ history, message });
 
       return res.status(200).json({
@@ -889,6 +1045,18 @@ export default async function handler(req, res) {
         submissionError: result.submissionError
           ? String(result.submissionError.message || result.submissionError)
           : null,
+      });
+    }
+
+    if (quotePromptSeen && looksLikeNoiseOrCorrection(message)) {
+      return res.status(200).json({
+        reply: "No worries — would you like me to organise this for you now?",
+        voiceReply: "No worries — would you like me to organise this for you now?",
+        submitted: false,
+        leadComplete: false,
+        service: "unknown",
+        missingFields: [],
+        submissionError: null,
       });
     }
 
