@@ -7,6 +7,12 @@ const client = new OpenAI({
 
 const LEAD_TO_EMAIL = process.env.LEAD_TO_EMAIL || "info@servhq.com.au";
 
+function setCorsHeaders(res) {
+  res.setHeader("Access-Control-Allow-Origin", "https://servhq.com.au");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
 function safeJsonParse(value) {
   if (!value) return null;
 
@@ -38,7 +44,9 @@ function normalizeHistory(history) {
 }
 
 function historyForModel(history) {
-  return history.filter((m) => !String(m.content || "").startsWith("[LEAD_SUBMITTED]"));
+  return history.filter(
+    (m) => !String(m.content || "").startsWith("[LEAD_SUBMITTED]")
+  );
 }
 
 function buildConversationText(history, latestUserMessage = "") {
@@ -90,8 +98,12 @@ function buildEmailHtml(lead, transcript) {
     .map(
       ([label, value]) =>
         `<tr>
-          <td style="padding:10px 12px;border:1px solid #ddd;font-weight:600;background:#f7f7f7;">${escapeHtml(label)}</td>
-          <td style="padding:10px 12px;border:1px solid #ddd;">${escapeHtml(formatValue(value))}</td>
+          <td style="padding:10px 12px;border:1px solid #ddd;font-weight:600;background:#f7f7f7;">${escapeHtml(
+            label
+          )}</td>
+          <td style="padding:10px 12px;border:1px solid #ddd;">${escapeHtml(
+            formatValue(value)
+          )}</td>
         </tr>`
     )
     .join("");
@@ -105,7 +117,9 @@ function buildEmailHtml(lead, transcript) {
       </table>
 
       <h3 style="margin:0 0 10px;">Conversation transcript</h3>
-      <div style="white-space:pre-wrap;border:1px solid #ddd;padding:14px;border-radius:8px;background:#fafafa;">${escapeHtml(transcript)}</div>
+      <div style="white-space:pre-wrap;border:1px solid #ddd;padding:14px;border-radius:8px;background:#fafafa;">${escapeHtml(
+        transcript
+      )}</div>
     </div>
   `;
 }
@@ -161,7 +175,9 @@ async function sendLeadEmail(lead, transcript) {
   }
 
   const transporter = getTransporter();
-  const subjectService = lead.service ? lead.service.replace(/_/g, " ") : "service request";
+  const subjectService = lead.service
+    ? lead.service.replace(/_/g, " ")
+    : "service request";
 
   await transporter.sendMail({
     from: process.env.SMTP_FROM || process.env.SMTP_USER,
@@ -242,7 +258,13 @@ function detectVehicleType(lead) {
 
   if (combined.includes("sedan")) return "sedan";
   if (combined.includes("suv")) return "suv";
-  if (combined.includes("4wd") || combined.includes("4 wd") || combined.includes("four wheel drive")) return "4wd";
+  if (
+    combined.includes("4wd") ||
+    combined.includes("4 wd") ||
+    combined.includes("four wheel drive")
+  ) {
+    return "4wd";
+  }
 
   return null;
 }
@@ -358,7 +380,11 @@ function buildQuoteReply(lead) {
     return "I’ve got everything I need for that. Our team will contact you with a more accurate quote. Did you want me to organise a quote and get the team organising a partnered business in your area now?";
   }
 
-  return `The price ranges from ${formatCurrency(range.min)} to ${formatCurrency(range.max)} but our team will contact you with a more accurate quote. Did you want me to organise a quote and get the team organising a partnered business in your area now?`;
+  return `The price ranges from ${formatCurrency(
+    range.min
+  )} to ${formatCurrency(
+    range.max
+  )} but our team will contact you with a more accurate quote. Did you want me to organise a quote and get the team organising a partnered business in your area now?`;
 }
 
 function applyReplyOverrides(rawReply, extracted) {
@@ -504,7 +530,9 @@ function looksLikeNoMoreServices(message) {
 }
 
 function looksLikeQuoteConfirmation(message) {
-  const normalized = normalizeSpaces(message).toLowerCase().replace(/[^\w\s]/g, "");
+  const normalized = normalizeSpaces(message)
+    .toLowerCase()
+    .replace(/[^\w\s]/g, "");
 
   const confirmations = [
     "yes",
@@ -532,7 +560,9 @@ function looksLikeQuoteConfirmation(message) {
 }
 
 function hasSubmittedMarker(history) {
-  return history.some((m) => String(m.content || "").startsWith("[LEAD_SUBMITTED]"));
+  return history.some((m) =>
+    String(m.content || "").startsWith("[LEAD_SUBMITTED]")
+  );
 }
 
 function getLastAssistantMessage(history) {
@@ -578,7 +608,9 @@ async function extractLeadFromTranscript(transcript) {
 
   const range = getQuoteRange(lead);
   if (range) {
-    lead.quote_range = `${formatCurrency(range.min)} to ${formatCurrency(range.max)}`;
+    lead.quote_range = `${formatCurrency(range.min)} to ${formatCurrency(
+      range.max
+    )}`;
   }
 
   return {
@@ -679,9 +711,7 @@ Rules:
 `;
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "https://servhq.com.au");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  setCorsHeaders(res);
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
@@ -715,6 +745,7 @@ export default async function handler(req, res) {
     if (looksLikeNoMoreServices(message) && hasSubmittedMarker(history)) {
       return res.status(200).json({
         reply: "Perfect — you’re all set. Our team will now work on the quote request and be in touch.",
+        voiceReply: "Perfect — you’re all set. Our team will now work on the quote request and be in touch.",
         submitted: false,
         leadComplete: false,
         service: "unknown",
@@ -723,7 +754,10 @@ export default async function handler(req, res) {
       });
     }
 
-    if (isQuotePromptMessage(lastAssistantMessage) && looksLikeQuoteConfirmation(message)) {
+    if (
+      isQuotePromptMessage(lastAssistantMessage) &&
+      looksLikeQuoteConfirmation(message)
+    ) {
       const transcriptFromHistory = buildConversationText(history);
       const extracted = await extractLeadFromTranscript(transcriptFromHistory);
       const lead = {
@@ -748,13 +782,19 @@ export default async function handler(req, res) {
         console.error("Confirmed quote lead email failed:", emailError);
       }
 
+      const confirmationReply =
+        "Perfect — I’ve got that organised. Is there any other services you are trying to get taken care of while you’re here?";
+
       return res.status(200).json({
-        reply: "Perfect — I’ve got that organised. Is there any other services you are trying to get taken care of while you’re here?",
+        reply: confirmationReply,
+        voiceReply: confirmationReply,
         submitted,
         leadComplete: true,
         service: lead.service || "unknown",
         missingFields: [],
-        submissionError: submissionError ? String(submissionError.message || submissionError) : null,
+        submissionError: submissionError
+          ? String(submissionError.message || submissionError)
+          : null,
       });
     }
 
@@ -810,17 +850,21 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       reply,
+      voiceReply: reply,
       submitted,
       leadComplete: Boolean(extracted?.is_complete),
       service: lead.service || "unknown",
       missingFields: extracted?.missing_fields || [],
-      submissionError: submissionError ? String(submissionError.message || submissionError) : null,
+      submissionError: submissionError
+        ? String(submissionError.message || submissionError)
+        : null,
     });
   } catch (error) {
     console.error("ServHQ fatal error:", error);
 
     return res.status(500).json({
       reply: "Sorry — ServHQ had trouble responding.",
+      voiceReply: "Sorry — ServHQ had trouble responding.",
     });
   }
 }
