@@ -18,7 +18,10 @@ export default async function handler(req: any, res: any) {
   }
 
   if (req.method === "GET") {
-    return res.status(200).json({ status: "ok", message: "Speech API is live" });
+    return res.status(200).json({
+      status: "ok",
+      message: "Speech API is live",
+    });
   }
 
   if (req.method !== "POST") {
@@ -43,7 +46,11 @@ export default async function handler(req: any, res: any) {
     const buffer = Buffer.from(arrayBuffer);
 
     res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
     return res.status(200).send(buffer);
   } catch (error) {
     console.error("OpenAI speech error:", error);
