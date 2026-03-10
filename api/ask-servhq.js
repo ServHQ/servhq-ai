@@ -303,9 +303,46 @@ function detectCleaningTier(lead) {
 function detectLawnSize(lead) {
   const combined = `${lead.job_type || ""} ${lead.job_details || ""}`.toLowerCase();
 
-  if (combined.includes("small")) return "small";
-  if (combined.includes("medium")) return "medium";
-  if (combined.includes("large")) return "large";
+  if (
+    combined.includes("tiny") ||
+    combined.includes("small") ||
+    combined.includes("small yard") ||
+    combined.includes("small lawn") ||
+    combined.includes("little yard") ||
+    combined.includes("little lawn") ||
+    combined.includes("just the front") ||
+    combined.includes("front lawn only") ||
+    combined.includes("front yard only")
+  ) {
+    return "small";
+  }
+
+  if (
+    combined.includes("large") ||
+    combined.includes("big") ||
+    combined.includes("huge") ||
+    combined.includes("acre") ||
+    combined.includes("acreage") ||
+    combined.includes("big yard") ||
+    combined.includes("big lawn") ||
+    combined.includes("large yard") ||
+    combined.includes("large lawn") ||
+    combined.includes("very overgrown")
+  ) {
+    return "large";
+  }
+
+  if (
+    combined.includes("medium") ||
+    combined.includes("average") ||
+    combined.includes("standard size") ||
+    combined.includes("standard-sized") ||
+    combined.includes("front and back") ||
+    combined.includes("front & back") ||
+    combined.includes("both front and back")
+  ) {
+    return "medium";
+  }
 
   return null;
 }
@@ -356,6 +393,19 @@ function detectPestSize(lead) {
   return null;
 }
 
+function isGenericLawnResponse(value) {
+  const normalized = normalizeSpaces(value).toLowerCase();
+  return (
+    !normalized ||
+    normalized === "all good" ||
+    normalized === "nothing else" ||
+    normalized === "no extras" ||
+    normalized === "none" ||
+    normalized === "n/a" ||
+    normalized === "na"
+  );
+}
+
 function inferMissingLeadFields(lead) {
   const next = {
     ...emptyLead(),
@@ -387,6 +437,10 @@ function inferMissingLeadFields(lead) {
 
     if (!next.job_details && next.job_type) {
       next.job_details = next.job_type;
+    }
+
+    if (isGenericLawnResponse(next.job_details)) {
+      next.job_details = "medium lawn";
     }
   }
 
@@ -439,8 +493,8 @@ function getQuoteRange(lead) {
   }
 
   if (service === "lawn_mowing") {
-    const size = detectLawnSize(lead);
-    if (!size) return null;
+    let size = detectLawnSize(lead);
+    if (!size) size = "medium";
 
     if (size === "small") return { min: 80, max: 100 };
     if (size === "medium") return { min: 100, max: 120 };
@@ -739,7 +793,7 @@ function applyReplyOverrides(rawReply, extracted) {
     }
 
     if (lead.service === "lawn_mowing") {
-      return "Can you briefly describe the yard — front, back, approximate size, and whether it’s overgrown?";
+      return "Can you tell me roughly how big the lawn is — small, medium or large — and whether it’s overgrown or needs anything extra like clippings removed or edging?";
     }
 
     if (lead.service === "car_detailing") {
@@ -1143,6 +1197,7 @@ Rules:
 - If the service is obvious, do not ask for it again.
 - If the job type is obvious, do not ask for it again.
 - For lawn mowing, if the user clearly wants a standard mow and already gave yard details, do not ask again if it is a regular mow.
+- For lawn mowing, when asking for job details, ask specifically for lawn size and any extras so a rough price can be given.
 - If the user makes a typo, speech mistake, or irrelevant interruption near quote stage, do not restart discovery.
 - If the user confirms after a quote prompt, do not restart discovery.
 - Reuse contact details and address for another service unless the user changes them.
@@ -1179,6 +1234,7 @@ Rules:
 - If an email is spoken with spaces, reconstruct it into normal email format.
 - If a phone number contains spaces, reconstruct it into normal format.
 - For lawn mowing, if the conversation clearly indicates a standard mow and includes yard details, infer job_type as "regular lawn mow" if needed.
+- For lawn mowing, if the user gives generic job details like "all good", "none", or "no extras", keep the lead complete and allow pricing to default to a medium lawn if size is still unknown.
 - "service" must be one of:
   cleaning, lawn_mowing, car_detailing, pressure_washing, pest_control, unknown
 - "is_complete" must only be true when all of these fields are present:
