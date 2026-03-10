@@ -389,14 +389,56 @@ function buildQuoteReply(lead) {
   const range = getQuoteRange(lead);
 
   if (!range) {
-    return "I’ve got everything I need for that. Our team will contact you with a more accurate quote. Did you want me to organise a quote and get the team organising a partnered business in your area now?";
+    return "We can definitely take care of that. Our team will contact you with a more accurate quote. Would you like me to go ahead and organise your quote now?";
   }
 
-  return `The price ranges from ${formatCurrency(
+  const service = toLower(lead.service);
+
+  if (service === "lawn_mowing") {
+    return `We can definitely take care of that. For a lawn like yours, the price usually ranges from ${formatCurrency(
+      range.min
+    )} to ${formatCurrency(
+      range.max
+    )} depending on the condition. Would you like me to go ahead and organise your quote now?`;
+  }
+
+  if (service === "cleaning") {
+    return `We can definitely take care of that. For a home like yours, the price usually ranges from ${formatCurrency(
+      range.min
+    )} to ${formatCurrency(
+      range.max
+    )} depending on the condition. Would you like me to go ahead and organise your quote now?`;
+  }
+
+  if (service === "car_detailing") {
+    return `We can definitely take care of that. For a vehicle like yours, the price usually ranges from ${formatCurrency(
+      range.min
+    )} to ${formatCurrency(
+      range.max
+    )} depending on the condition. Would you like me to go ahead and organise your quote now?`;
+  }
+
+  if (service === "pest_control") {
+    return `We can definitely take care of that. For a property like yours, the price usually ranges from ${formatCurrency(
+      range.min
+    )} to ${formatCurrency(
+      range.max
+    )} depending on the condition. Would you like me to go ahead and organise your quote now?`;
+  }
+
+  if (service === "pressure_washing") {
+    return `We can definitely take care of that. For an area like yours, the price usually ranges from ${formatCurrency(
+      range.min
+    )} to ${formatCurrency(
+      range.max
+    )} depending on the condition. Would you like me to go ahead and organise your quote now?`;
+  }
+
+  return `We can definitely take care of that. The price usually ranges from ${formatCurrency(
     range.min
   )} to ${formatCurrency(
     range.max
-  )} but our team will contact you with a more accurate quote. Did you want me to organise a quote and get the team organising a partnered business in your area now?`;
+  )}. Would you like me to go ahead and organise your quote now?`;
 }
 
 function applyReplyOverrides(rawReply, extracted) {
@@ -566,6 +608,11 @@ function looksLikeQuoteConfirmation(message) {
     "let's do it",
     "please organise it",
     "please organize it",
+    "lets go ahead",
+    "let's go ahead",
+    "go for it",
+    "okay go ahead",
+    "ok go ahead",
   ];
 
   return confirmations.includes(normalized);
@@ -586,8 +633,16 @@ function isQuotePromptMessage(content) {
   const normalized = String(content || "").toLowerCase();
   return (
     normalized.includes("the price ranges from") ||
+    normalized.includes("the price usually ranges from") ||
     normalized.includes("our team will contact you with a more accurate quote") ||
+    normalized.includes("would you like me to go ahead and organise your quote now") ||
     normalized.includes("did you want me to organise a quote")
+  );
+}
+
+function conversationContainsQuotePrompt(history) {
+  return history.some(
+    (m) => m.role === "assistant" && isQuotePromptMessage(m.content)
   );
 }
 
@@ -628,6 +683,55 @@ async function extractLeadFromTranscript(transcript) {
   return {
     ...extracted,
     lead,
+  };
+}
+
+async function submitConfirmedLead({ history, message }) {
+  const transcript = buildConversationText(history, message);
+  const extracted = await extractLeadFromTranscript(transcript);
+  const lead = {
+    ...(extracted.lead || {}),
+    service: extracted.service || extracted.lead?.service || "unknown",
+    quote_range: extracted.lead?.quote_range || "",
+  };
+
+  if (!extracted.is_complete) {
+    return {
+      ok: false,
+      extracted,
+      lead,
+      reply: applyReplyOverrides("Perfect — I’ve got everything I need.", extracted),
+      submitted: false,
+      submissionError: null,
+    };
+  }
+
+  let submitted = false;
+  let submissionError = null;
+
+  const confirmationReply =
+    "Perfect — I’ve got that organised. Is there any other services you are trying to get taken care of while you’re here?";
+
+  try {
+    console.log("Attempting to send confirmed quote lead email...");
+    await sendLeadEmail(
+      lead,
+      `${transcript}\nASSISTANT: ${confirmationReply}\nASSISTANT: [LEAD_SUBMITTED]`
+    );
+    submitted = true;
+    console.log("Confirmed quote lead email sent successfully.");
+  } catch (emailError) {
+    submissionError = emailError;
+    console.error("Confirmed quote lead email failed:", emailError);
+  }
+
+  return {
+    ok: true,
+    extracted,
+    lead,
+    reply: confirmationReply,
+    submitted,
+    submissionError,
   };
 }
 
@@ -753,6 +857,7 @@ export default async function handler(req, res) {
     }
 
     const lastAssistantMessage = getLastAssistantMessage(history);
+    const transcriptWithCurrentMessage = buildConversationText(history, message);
 
     if (looksLikeNoMoreServices(message) && hasSubmittedMarker(history)) {
       return res.status(200).json({
@@ -766,46 +871,23 @@ export default async function handler(req, res) {
       });
     }
 
-    if (
-      isQuotePromptMessage(lastAssistantMessage) &&
-      looksLikeQuoteConfirmation(message)
-    ) {
-      const transcriptFromHistory = buildConversationText(history);
-      const extracted = await extractLeadFromTranscript(transcriptFromHistory);
-      const lead = {
-        ...(extracted.lead || {}),
-        service: extracted.service || extracted.lead?.service || "unknown",
-        quote_range: extracted.lead?.quote_range || "",
-      };
+    const quoteConfirmationIntent = looksLikeQuoteConfirmation(message);
+    const quotePromptSeen =
+      isQuotePromptMessage(lastAssistantMessage) ||
+      conversationContainsQuotePrompt(history);
 
-      let submitted = false;
-      let submissionError = null;
-
-      try {
-        console.log("Attempting to send confirmed quote lead email...");
-        await sendLeadEmail(
-          lead,
-          `${transcriptFromHistory}\nUSER: ${message}\nASSISTANT: Perfect — I’ve got that organised. Is there any other services you are trying to get taken care of while you’re here?`
-        );
-        submitted = true;
-        console.log("Confirmed quote lead email sent successfully.");
-      } catch (emailError) {
-        submissionError = emailError;
-        console.error("Confirmed quote lead email failed:", emailError);
-      }
-
-      const confirmationReply =
-        "Perfect — I’ve got that organised. Is there any other services you are trying to get taken care of while you’re here?";
+    if (quoteConfirmationIntent && quotePromptSeen) {
+      const result = await submitConfirmedLead({ history, message });
 
       return res.status(200).json({
-        reply: confirmationReply,
-        voiceReply: confirmationReply,
-        submitted,
-        leadComplete: true,
-        service: lead.service || "unknown",
-        missingFields: [],
-        submissionError: submissionError
-          ? String(submissionError.message || submissionError)
+        reply: result.reply,
+        voiceReply: result.reply,
+        submitted: result.submitted,
+        leadComplete: Boolean(result.extracted?.is_complete),
+        service: result.lead?.service || "unknown",
+        missingFields: result.extracted?.missing_fields || [],
+        submissionError: result.submissionError
+          ? String(result.submissionError.message || result.submissionError)
           : null,
       });
     }
@@ -837,8 +919,6 @@ export default async function handler(req, res) {
       assistantResponse.output_text ||
       "Sorry — ServHQ had trouble responding.";
 
-    const transcript = buildConversationText(history, message);
-
     let reply = rawReply;
     let submitted = false;
     let submissionError = null;
@@ -846,7 +926,7 @@ export default async function handler(req, res) {
     let lead = emptyLead();
 
     if (shouldExtractNow(rawReply)) {
-      extracted = await extractLeadFromTranscript(transcript);
+      extracted = await extractLeadFromTranscript(transcriptWithCurrentMessage);
       lead = extracted.lead || emptyLead();
 
       console.log("Extracted lead:", JSON.stringify(lead, null, 2));
@@ -858,6 +938,33 @@ export default async function handler(req, res) {
       } else {
         reply = applyReplyOverrides(rawReply, extracted);
       }
+    }
+
+    if (looksLikeQuoteConfirmation(message)) {
+      const fallbackExtracted =
+        extracted || (await extractLeadFromTranscript(transcriptWithCurrentMessage));
+      const fallbackLead = fallbackExtracted.lead || emptyLead();
+      const fallbackQuotePromptSeen =
+        quotePromptSeen || isQuotePromptMessage(reply);
+
+      if (fallbackExtracted.is_complete && fallbackQuotePromptSeen) {
+        const result = await submitConfirmedLead({ history, message });
+
+        return res.status(200).json({
+          reply: result.reply,
+          voiceReply: result.reply,
+          submitted: result.submitted,
+          leadComplete: Boolean(result.extracted?.is_complete),
+          service: result.lead?.service || "unknown",
+          missingFields: result.extracted?.missing_fields || [],
+          submissionError: result.submissionError
+            ? String(result.submissionError.message || result.submissionError)
+            : null,
+        });
+      }
+
+      lead = fallbackLead;
+      extracted = fallbackExtracted;
     }
 
     return res.status(200).json({
