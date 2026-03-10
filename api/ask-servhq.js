@@ -43,6 +43,8 @@ const SERVICE_SYNONYMS = {
     "fortnightly clean",
     "every 2 weeks",
     "every two weeks",
+    "regular clean",
+    "weekly clean",
   ],
   lawn_mowing: [
     "lawn",
@@ -899,6 +901,15 @@ function getQuoteRange(lead) {
 
   if (service === "lawn_mowing") {
     let size = detectLawnSize(lead);
+    if (!size) {
+      const dimMatch = String(lead.job_details || "").match(/(\d+)\s*m\s*(?:x|by)\s*(\d+)\s*m/i);
+      if (dimMatch) {
+        const area = Number(dimMatch[1]) * Number(dimMatch[2]);
+        if (area <= 120) size = "small";
+        else if (area <= 300) size = "medium";
+        else size = "large";
+      }
+    }
     if (!size) size = "medium";
 
     if (size === "small") return { min: 80, max: 100 };
@@ -1247,7 +1258,7 @@ function applyReplyOverrides(rawReply, extracted, history = []) {
 
   if (nextField === "address") {
     if (reuse) {
-      return "Is this for the same address as before, or a different one?";
+      return "Got it — is this for the same address as before, or a different one?";
     }
     return "What’s the full address for the job, including postcode?";
   }
@@ -1358,7 +1369,7 @@ function applyReplyOverrides(rawReply, extracted, history = []) {
 
   if (nextField === "preferred_datetime") {
     if (lead.service === "cleaning") {
-      return "What’s your preferred date and time for the clean?\nIf we can’t find a provider available at that exact date and time, we’ll get as close as possible and let you know.";
+      return "What’s your preferred date and time for the cleaning?\nIf we can’t find a provider available at that exact date and time, we’ll get as close as possible and let you know.";
     }
 
     if (lead.service === "lawn_mowing") {
@@ -1377,6 +1388,142 @@ function applyReplyOverrides(rawReply, extracted, history = []) {
   }
 
   return rawReply;
+}
+
+function applyReplyOverridesForNewService(extracted, history = []) {
+  const lead = extracted?.lead || {};
+  const missing = getMissingFieldsConsideringReuse(lead, history);
+  const nextField = missing[0];
+
+  if (!nextField) {
+    return buildQuoteReply(lead);
+  }
+
+  if (nextField === "address") {
+    return "Got it — is this for the same address as before, or a different one?";
+  }
+
+  if (nextField === "job_type") {
+    if (lead.service === "cleaning") {
+      return "Got it — is this a regular clean, deep clean, or vacate clean?";
+    }
+
+    if (lead.service === "lawn_mowing") {
+      return "Got it — is this just a regular lawn mow, a yard clean-up, or hedge trimming as well?";
+    }
+
+    if (lead.service === "car_detailing") {
+      return "Got it — are you after an interior and exterior detail, or interior and exterior plus cut and polish?";
+    }
+
+    if (lead.service === "pressure_washing") {
+      return "Got it — what needs pressure washing? For example driveway, paths, patio, house exterior or something else.";
+    }
+
+    if (lead.service === "pest_control") {
+      return "Got it — what kind of pest issue are you dealing with?";
+    }
+
+    if (lead.service === "plumbing") {
+      return "Got it — what plumbing issue do you need help with?";
+    }
+
+    if (lead.service === "electrical") {
+      return "Got it — what electrical work needs to be done?";
+    }
+
+    if (lead.service === "fencing") {
+      return "Got it — what fencing work do you need done?";
+    }
+
+    if (lead.service === "carpentry") {
+      return "Got it — what carpentry work needs to be done?";
+    }
+
+    if (lead.service === "painting") {
+      return "Got it — what needs painting?";
+    }
+
+    if (lead.service === "landscaping") {
+      return "Got it — what landscaping work are you after?";
+    }
+
+    if (lead.service === "handyman") {
+      return "Got it — what jobs need to be done?";
+    }
+  }
+
+  if (nextField === "job_details") {
+    if (lead.service === "cleaning") {
+      return "Can you briefly describe the job — number of bedrooms and bathrooms, plus anything specific you want looked after?";
+    }
+
+    if (lead.service === "lawn_mowing") {
+      return "Can you tell me roughly how big the lawn is — small, medium or large — and whether it’s overgrown or needs anything extra like edging or clippings removed?";
+    }
+
+    if (lead.service === "car_detailing") {
+      return "Can you briefly describe the vehicle — sedan, SUV or 4WD — and overall condition?";
+    }
+
+    if (lead.service === "pressure_washing") {
+      return "Can you briefly describe the area and condition?";
+    }
+
+    if (lead.service === "pest_control") {
+      return "Can you briefly describe the property size and where the issue is?";
+    }
+
+    if (lead.service === "plumbing") {
+      return "Can you briefly describe where the issue is and whether it’s urgent, leaking or causing flooding?";
+    }
+
+    if (lead.service === "electrical") {
+      return "Can you briefly describe how many items are involved and whether it’s a repair or new installation?";
+    }
+
+    if (lead.service === "fencing") {
+      return "Can you briefly describe the fence length, material if known, and whether the old fence needs removing?";
+    }
+
+    if (lead.service === "carpentry") {
+      return "Can you briefly describe the size of the job and whether materials need to be supplied?";
+    }
+
+    if (lead.service === "painting") {
+      return "Can you briefly describe how many rooms or areas need painting and whether any prep or repairs are needed first?";
+    }
+
+    if (lead.service === "landscaping") {
+      return "Can you briefly describe the size of the area and what you want done?";
+    }
+
+    if (lead.service === "handyman") {
+      return "Can you briefly describe the tasks and roughly how many there are?";
+    }
+  }
+
+  if (nextField === "preferred_datetime") {
+    if (lead.service === "cleaning") {
+      return "What’s your preferred date and time for the cleaning?\nIf we can’t find a provider available at that exact date and time, we’ll get as close as possible and let you know.";
+    }
+
+    if (lead.service === "lawn_mowing") {
+      return "What’s your preferred date and time for the lawn mowing?\nIf we can’t find a provider available at that exact date and time, we’ll get as close as possible and let you know.";
+    }
+
+    if (lead.service === "car_detailing") {
+      return "What’s your preferred date and time for the detailing?\nIf we can’t find a provider available at that exact date and time, we’ll get as close as possible and let you know.";
+    }
+
+    if (lead.service === "pressure_washing") {
+      return "What’s your preferred date and time for the pressure washing?\nIf we can’t find a provider available at that exact date and time, we’ll get as close as possible and let you know.";
+    }
+
+    return "What’s your preferred date and time?\nIf we can’t find a provider available at that exact date and time, we’ll get as close as possible and let you know.";
+  }
+
+  return applyReplyOverrides("Perfect — I’ve got everything I need.", extracted, history);
 }
 
 function shouldExtractNow(reply) {
@@ -1639,6 +1786,8 @@ function looksLikeSameAddressConfirmation(message) {
     "yep same address",
     "yeah same address",
     "same",
+    "use the same address",
+    "same one as before",
   ];
 
   return positives.includes(normalized);
@@ -1646,6 +1795,73 @@ function looksLikeSameAddressConfirmation(message) {
 
 function looksLikeNewServiceRequest(message) {
   return detectServiceFromText(message) !== "unknown";
+}
+
+function getLastKnownCustomerDetails(extracted) {
+  const known = extracted?.known_customer || {};
+  return {
+    name: normalizeSpaces(known.name || ""),
+    phone: normalizePhone(known.phone || ""),
+    email: normalizeEmail(known.email || ""),
+    address: normalizeSpaces(known.address || ""),
+  };
+}
+
+function buildLeadWithKnownCustomer(service, knownCustomer) {
+  return inferMissingLeadFields({
+    ...emptyLead(),
+    service,
+    name: knownCustomer.name || "",
+    phone: knownCustomer.phone || "",
+    email: knownCustomer.email || "",
+    address: knownCustomer.address || "",
+  });
+}
+
+function isSameService(a, b) {
+  return String(a || "").trim() === String(b || "").trim();
+}
+
+function shouldStartNewServiceFlow({ history, message, extracted, lastAssistantMessage }) {
+  if (!hasSubmittedMarker(history)) return false;
+
+  const detectedService = detectServiceFromText(message);
+  if (!detectedService || detectedService === "unknown") return false;
+
+  const currentLeadService = extracted?.lead?.service || extracted?.service || "";
+  const lastAskedAboutOldService =
+    String(lastAssistantMessage || "").toLowerCase().includes("lawn mowing") ||
+    String(lastAssistantMessage || "").toLowerCase().includes("pressure washing") ||
+    String(lastAssistantMessage || "").toLowerCase().includes("clean") ||
+    String(lastAssistantMessage || "").toLowerCase().includes("detail") ||
+    String(lastAssistantMessage || "").toLowerCase().includes("pest") ||
+    String(lastAssistantMessage || "").toLowerCase().includes("plumbing") ||
+    String(lastAssistantMessage || "").toLowerCase().includes("electrical") ||
+    String(lastAssistantMessage || "").toLowerCase().includes("fencing") ||
+    String(lastAssistantMessage || "").toLowerCase().includes("carpentry") ||
+    String(lastAssistantMessage || "").toLowerCase().includes("painting") ||
+    String(lastAssistantMessage || "").toLowerCase().includes("landscaping") ||
+    String(lastAssistantMessage || "").toLowerCase().includes("handyman");
+
+  if (!currentLeadService) return true;
+  if (!isSameService(detectedService, currentLeadService)) return true;
+
+  return lastAskedAboutOldService && !isSameService(detectedService, currentLeadService);
+}
+
+function buildNewServiceExtractionFromKnownCustomer(service, knownCustomer) {
+  const lead = buildLeadWithKnownCustomer(service, knownCustomer);
+
+  return {
+    service,
+    is_complete: false,
+    missing_fields: getMissingFieldsFromLead(lead, {
+      requireContact: false,
+      requireAddress: !lead.address,
+    }),
+    known_customer: knownCustomer,
+    lead,
+  };
 }
 
 async function extractLeadFromTranscript(transcript) {
@@ -1670,9 +1886,10 @@ async function extractLeadFromTranscript(transcript) {
     is_complete: Boolean(parsed.is_complete),
     missing_fields: Array.isArray(parsed.missing_fields) ? parsed.missing_fields : [],
     lead: parsed.lead && typeof parsed.lead === "object" ? parsed.lead : emptyLead(),
-    known_customer: parsed.known_customer && typeof parsed.known_customer === "object"
-      ? parsed.known_customer
-      : emptyLead(),
+    known_customer:
+      parsed.known_customer && typeof parsed.known_customer === "object"
+        ? parsed.known_customer
+        : { name: "", phone: "", email: "", address: "" },
   };
 
   let lead = {
@@ -1681,14 +1898,20 @@ async function extractLeadFromTranscript(transcript) {
   };
 
   let knownCustomer = {
-    ...emptyLead(),
+    name: "",
+    phone: "",
+    email: "",
+    address: "",
     ...(extracted.known_customer || {}),
   };
 
-  knownCustomer = inferMissingLeadFields(knownCustomer);
+  knownCustomer.name = normalizeSpaces(knownCustomer.name || "");
+  knownCustomer.phone = normalizePhone(knownCustomer.phone || "");
+  knownCustomer.email = normalizeEmail(knownCustomer.email || "");
+  knownCustomer.address = normalizeSpaces(knownCustomer.address || "");
+
   lead = inferMissingLeadFields(lead);
 
-  if (!knownCustomer.service) knownCustomer.service = "";
   if (!lead.service || lead.service === "unknown") {
     lead.service = detectServiceFromText(transcript);
   }
@@ -1800,6 +2023,8 @@ Critical behavior:
 - Do not ask for name, phone, or email again if they were already given earlier in the conversation.
 - If a previous address exists and the user asks for another quote, ask whether it is for the same address only if needed.
 - Treat "we went through this", "same as before", and similar replies as a sign to reuse existing details.
+- If the user starts asking about a new service after a previous quote was organised, switch to the new service immediately.
+- Do not keep asking follow-up questions for the old service once a new service is clearly mentioned.
 
 Rules:
 - Ask one question at a time.
@@ -1861,8 +2086,13 @@ Rules:
 - Ignore filler, corrections, accidental messages, and unrelated noise where possible.
 - "known_customer" should capture the latest reliable customer identity/contact details from anywhere in the conversation.
 - If a second service is discussed later in the conversation, reuse previously collected customer details in the "lead" if the user has not changed them.
+- If a new service is clearly requested after an earlier completed quote, treat that as the current lead service.
 - For lawn mowing, if the conversation clearly indicates a standard mow and includes yard details, infer job_type as "regular lawn mow" if needed.
 - For lawn mowing, if the user gives generic job details like "all good", "none", or "no extras", keep the lead complete and allow pricing to default to a medium lawn if size is still unknown.
+- For cleaning, if the user says things like "regular home cleaning every 2 weeks for a 4 bed 2 bathroom" infer:
+  - service = cleaning
+  - job_type = regular clean
+  - job_details should keep the bedroom/bathroom/frequency context
 - For pressure washing, map common user answers into a usable job_type when obvious:
   - driveway / concrete driveway / concrete outside home / paths / pathways / footpath / concrete around house -> "concrete driveway / paths"
   - patio / alfresco / courtyard / verandah -> "patio / outdoor area"
@@ -1945,6 +2175,55 @@ export default async function handler(req, res) {
     const lastAssistantMessage = getLastAssistantMessage(history);
     const transcriptWithCurrentMessage = buildConversationText(history, message);
 
+    const preExtractedForRouting = await extractLeadFromTranscript(
+      transcriptWithCurrentMessage
+    );
+    const knownCustomer = getLastKnownCustomerDetails(preExtractedForRouting);
+    const detectedMessageService = detectServiceFromText(message);
+
+    if (
+      shouldStartNewServiceFlow({
+        history,
+        message,
+        extracted: preExtractedForRouting,
+        lastAssistantMessage,
+      })
+    ) {
+      const newServiceExtracted = buildNewServiceExtractionFromKnownCustomer(
+        detectedMessageService,
+        knownCustomer
+      );
+
+      if (detectedMessageService === "cleaning") {
+        const lowerMsg = message.toLowerCase();
+        if (
+          lowerMsg.includes("regular") ||
+          lowerMsg.includes("every 2 weeks") ||
+          lowerMsg.includes("every two weeks") ||
+          lowerMsg.includes("fortnight")
+        ) {
+          newServiceExtracted.lead.job_type = "regular clean";
+          newServiceExtracted.lead.job_details = normalizeSpaces(message);
+          newServiceExtracted.missing_fields = getMissingFieldsConsideringReuse(
+            newServiceExtracted.lead,
+            history
+          );
+        }
+      }
+
+      const reply = applyReplyOverridesForNewService(newServiceExtracted, history);
+
+      return res.status(200).json({
+        reply,
+        voiceReply: reply,
+        submitted: false,
+        leadComplete: false,
+        service: newServiceExtracted.lead?.service || "unknown",
+        missingFields: newServiceExtracted.missing_fields || [],
+        submissionError: null,
+      });
+    }
+
     if (looksLikeNoMoreServices(message) && hasSubmittedMarker(history)) {
       return res.status(200).json({
         reply: "Perfect — you’re all set. Our team will now work on the quote request and be in touch.",
@@ -2003,9 +2282,12 @@ export default async function handler(req, res) {
       });
     }
 
-    const preExtracted = await extractLeadFromTranscript(transcriptWithCurrentMessage);
+    const preExtracted = preExtractedForRouting;
     const reuseContext = getReuseContextFromExtracted(preExtracted);
-    const preMissing = getMissingFieldsConsideringReuse(preExtracted.lead || emptyLead(), history);
+    const preMissing = getMissingFieldsConsideringReuse(
+      preExtracted.lead || emptyLead(),
+      history
+    );
 
     if (
       hasSubmittedMarker(history) &&
@@ -2033,9 +2315,16 @@ export default async function handler(req, res) {
       !preExtracted.lead?.address
     ) {
       preExtracted.lead.address = preExtracted.known_customer.address;
-      preExtracted.missing_fields = getMissingFieldsConsideringReuse(preExtracted.lead, history);
+      preExtracted.missing_fields = getMissingFieldsConsideringReuse(
+        preExtracted.lead,
+        history
+      );
 
-      const reply = applyReplyOverrides("Perfect — I’ve got everything I need.", preExtracted, history);
+      const reply = applyReplyOverrides(
+        "Perfect — I’ve got everything I need.",
+        preExtracted,
+        history
+      );
 
       return res.status(200).json({
         reply,
@@ -2059,6 +2348,7 @@ Email: ${preExtracted.known_customer?.email || ""}
 Address: ${preExtracted.known_customer?.address || ""}
 
 If the customer is asking for another service, reuse these details and do not ask again unless the customer changes them.
+If the customer clearly starts a new service, stop following the old service flow immediately.
 `
       : "";
 
@@ -2147,7 +2437,10 @@ If the customer is asking for another service, reuse these details and do not as
       const fallbackQuotePromptSeen =
         quotePromptSeen || isQuotePromptMessage(reply);
 
-      const fallbackMissing = getMissingFieldsConsideringReuse(fallbackLead, history);
+      const fallbackMissing = getMissingFieldsConsideringReuse(
+        fallbackLead,
+        history
+      );
 
       if (fallbackMissing.length === 0 && fallbackQuotePromptSeen) {
         const result = await submitConfirmedLead({ history, message });
@@ -2174,9 +2467,13 @@ If the customer is asking for another service, reuse these details and do not as
       voiceReply: reply,
       submitted,
       leadComplete:
-        getMissingFieldsConsideringReuse(extracted?.lead || emptyLead(), history).length === 0,
+        getMissingFieldsConsideringReuse(extracted?.lead || emptyLead(), history)
+          .length === 0,
       service: lead.service || "unknown",
-      missingFields: getMissingFieldsConsideringReuse(extracted?.lead || emptyLead(), history),
+      missingFields: getMissingFieldsConsideringReuse(
+        extracted?.lead || emptyLead(),
+        history
+      ),
       submissionError: submissionError
         ? String(submissionError.message || submissionError)
         : null,
