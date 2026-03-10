@@ -7,8 +7,20 @@ const client = new OpenAI({
 
 const LEAD_TO_EMAIL = process.env.LEAD_TO_EMAIL || "info@servhq.com.au";
 
-function setCorsHeaders(res) {
-  res.setHeader("Access-Control-Allow-Origin", "https://servhq.com.au");
+const ALLOWED_ORIGINS = new Set([
+  "https://servhq.com.au",
+  "https://www.servhq.com.au",
+  "https://servhq.myshopify.com",
+]);
+
+function setCorsHeaders(req, res) {
+  const origin = req.headers.origin;
+
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
@@ -711,7 +723,7 @@ Rules:
 `;
 
 export default async function handler(req, res) {
-  setCorsHeaders(res);
+  setCorsHeaders(req, res);
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
