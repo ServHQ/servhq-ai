@@ -813,18 +813,18 @@ function applyReplyOverrides(rawReply, extracted) {
 
   if (nextField === "preferred_datetime") {
     if (lead.service === "cleaning") {
-      return "What’s your preferred date and time for the clean?";
+      return "What’s your preferred date and time for the clean?\nIf we can’t find a provider available at that exact date and time, we’ll get as close as possible and let you know.";
     }
 
     if (lead.service === "lawn_mowing") {
-      return "What’s your preferred date and time for the lawn mowing?";
+      return "What’s your preferred date and time for the lawn mowing?\nIf we can’t find a provider available at that exact date and time, we’ll get as close as possible and let you know.";
     }
 
     if (lead.service === "car_detailing") {
-      return "What’s your preferred date and time for the detail?";
+      return "What’s your preferred date and time for the detail?\nIf we can’t find a provider available at that exact date and time, we’ll get as close as possible and let you know.";
     }
 
-    return "What’s your preferred date and time?";
+    return "What’s your preferred date and time?\nIf we can’t find a provider available at that exact date and time, we’ll get as close as possible and let you know.";
   }
 
   return rawReply;
