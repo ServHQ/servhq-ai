@@ -13,6 +13,158 @@ const ALLOWED_ORIGINS = new Set([
   "https://servhq.myshopify.com",
 ]);
 
+const SUPPORTED_SERVICES = [
+  "cleaning",
+  "lawn_mowing",
+  "car_detailing",
+  "pressure_washing",
+  "pest_control",
+  "plumbing",
+  "electrical",
+  "fencing",
+  "carpentry",
+  "painting",
+  "landscaping",
+  "handyman",
+];
+
+const SERVICE_SYNONYMS = {
+  cleaning: [
+    "clean",
+    "cleaner",
+    "cleaning",
+    "house clean",
+    "bond clean",
+    "vacate clean",
+    "end of lease clean",
+    "office clean",
+    "airbnb clean",
+    "home cleaned",
+    "fortnightly clean",
+    "every 2 weeks",
+    "every two weeks",
+  ],
+  lawn_mowing: [
+    "lawn",
+    "mow",
+    "mowing",
+    "grass",
+    "yard",
+    "yard tidy",
+    "whipper snip",
+    "hedge trimming",
+    "garden maintenance",
+  ],
+  car_detailing: [
+    "car detail",
+    "detail",
+    "detailing",
+    "cut and polish",
+    "cut & polish",
+    "interior detail",
+    "paint correction",
+    "car cleaning",
+  ],
+  pressure_washing: [
+    "pressure wash",
+    "pressure washing",
+    "gurney",
+    "gurni",
+    "water blast",
+    "high pressure clean",
+    "driveway clean",
+    "soft wash",
+  ],
+  pest_control: [
+    "pest",
+    "pest control",
+    "ants",
+    "cockroaches",
+    "spiders",
+    "termites",
+    "rodents",
+    "mice",
+    "rats",
+  ],
+  plumbing: [
+    "plumber",
+    "plumbing",
+    "blocked drain",
+    "burst pipe",
+    "leak",
+    "leaking tap",
+    "toilet issue",
+    "hot water",
+    "hot water system",
+    "drain issue",
+  ],
+  electrical: [
+    "electrician",
+    "electrical",
+    "power point",
+    "powerpoint",
+    "switchboard",
+    "lighting",
+    "lights",
+    "ceiling fan",
+    "fan install",
+    "smoke alarm",
+    "rewiring",
+    "sparkie",
+  ],
+  fencing: [
+    "fence",
+    "fencing",
+    "colorbond",
+    "timber fence",
+    "gate",
+    "boundary fence",
+    "pool fence",
+  ],
+  carpentry: [
+    "carpenter",
+    "carpentry",
+    "deck",
+    "framing",
+    "skirting",
+    "architrave",
+    "door repair",
+    "shelving",
+    "cabinet",
+    "pergola",
+  ],
+  painting: [
+    "painter",
+    "painting",
+    "paint",
+    "repaint",
+    "interior painting",
+    "exterior painting",
+    "ceiling paint",
+    "wall paint",
+  ],
+  landscaping: [
+    "landscaping",
+    "landscape",
+    "turf",
+    "retaining wall",
+    "garden makeover",
+    "garden design",
+    "mulch",
+    "paving",
+    "irrigation",
+  ],
+  handyman: [
+    "handyman",
+    "odd jobs",
+    "small jobs",
+    "repairs around the house",
+    "bits and pieces",
+    "maintenance jobs",
+    "fix a few things",
+  ],
+};
+
 function setCorsHeaders(req, res) {
   const origin = req.headers.origin;
 
@@ -40,6 +192,17 @@ function safeJsonParse(value) {
     try {
       return JSON.parse(cleaned);
     } catch (_) {
+      const firstBrace = cleaned.indexOf("{");
+      const lastBrace = cleaned.lastIndexOf("}");
+
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        try {
+          return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+        } catch (_) {
+          return null;
+        }
+      }
+
       return null;
     }
   }
@@ -255,6 +418,25 @@ function findBedroomCount(text) {
   return match ? Number(match[1]) : null;
 }
 
+function detectServiceFromText(text) {
+  const normalized = normalizeSpaces(text).toLowerCase();
+  if (!normalized) return "unknown";
+
+  for (const [service, keywords] of Object.entries(SERVICE_SYNONYMS)) {
+    if (keywords.some((kw) => normalized.includes(kw))) {
+      return service;
+    }
+  }
+
+  return "unknown";
+}
+
+function serviceLabel(service) {
+  return String(service || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (s) => s.toUpperCase());
+}
+
 function hasRegularCleaningIntent(lead) {
   const combined = `${lead.job_type || ""} ${lead.job_details || ""}`.toLowerCase();
 
@@ -350,12 +532,13 @@ function detectLawnSize(lead) {
 function detectVehicleType(lead) {
   const combined = `${lead.job_type || ""} ${lead.job_details || ""}`.toLowerCase();
 
-  if (combined.includes("sedan")) return "sedan";
+  if (combined.includes("sedan") || combined.includes("hatch")) return "sedan";
   if (combined.includes("suv")) return "suv";
   if (
     combined.includes("4wd") ||
     combined.includes("4 wd") ||
-    combined.includes("four wheel drive")
+    combined.includes("four wheel drive") ||
+    combined.includes("dual cab")
   ) {
     return "4wd";
   }
@@ -530,11 +713,79 @@ function isGenericPressureWashResponse(value) {
   );
 }
 
+function inferTradeJobType(service, lead) {
+  const combined = `${lead.job_type || ""} ${lead.job_details || ""}`.toLowerCase();
+
+  if (service === "plumbing") {
+    if (combined.includes("blocked")) return "blocked drain / blockage";
+    if (combined.includes("hot water")) return "hot water system issue";
+    if (combined.includes("toilet")) return "toilet issue";
+    if (combined.includes("tap")) return "tap / fixture issue";
+    if (combined.includes("leak") || combined.includes("burst")) return "leak / pipe issue";
+    return "";
+  }
+
+  if (service === "electrical") {
+    if (combined.includes("power point") || combined.includes("powerpoint")) return "power point work";
+    if (combined.includes("light")) return "lighting work";
+    if (combined.includes("fan")) return "ceiling fan work";
+    if (combined.includes("switchboard")) return "switchboard work";
+    if (combined.includes("smoke alarm")) return "smoke alarm work";
+    return "";
+  }
+
+  if (service === "fencing") {
+    if (combined.includes("repair")) return "fence repair";
+    if (combined.includes("replace")) return "fence replacement";
+    if (combined.includes("gate")) return "gate install / repair";
+    if (combined.includes("new fence")) return "new fence";
+    return "";
+  }
+
+  if (service === "carpentry") {
+    if (combined.includes("deck")) return "deck work";
+    if (combined.includes("door")) return "door repair / install";
+    if (combined.includes("framing")) return "framing";
+    if (combined.includes("shelf")) return "shelving / storage";
+    if (combined.includes("skirting")) return "skirting / trim work";
+    return "";
+  }
+
+  if (service === "painting") {
+    if (combined.includes("interior")) return "interior painting";
+    if (combined.includes("exterior")) return "exterior painting";
+    if (combined.includes("ceiling")) return "ceiling painting";
+    if (combined.includes("fence")) return "fence painting";
+    return "";
+  }
+
+  if (service === "landscaping") {
+    if (combined.includes("turf")) return "turf installation";
+    if (combined.includes("retaining wall")) return "retaining wall";
+    if (combined.includes("garden clean")) return "garden clean-up";
+    if (combined.includes("garden design")) return "garden design";
+    if (combined.includes("paving")) return "paving / hardscaping";
+    return "";
+  }
+
+  if (service === "handyman") {
+    return "handyman / general repairs";
+  }
+
+  return "";
+}
+
 function inferMissingLeadFields(lead) {
   const next = {
     ...emptyLead(),
     ...lead,
   };
+
+  next.service = SUPPORTED_SERVICES.includes(next.service)
+    ? next.service
+    : detectServiceFromText(`${next.service} ${next.job_type} ${next.job_details}`);
+
+  if (next.service === "unknown") next.service = "";
 
   next.phone = normalizePhone(next.phone);
   next.email = normalizeEmail(next.email);
@@ -590,17 +841,31 @@ function inferMissingLeadFields(lead) {
     }
   }
 
+  if (
+    ["plumbing", "electrical", "fencing", "carpentry", "painting", "landscaping", "handyman"].includes(next.service)
+  ) {
+    if (!next.job_type) {
+      next.job_type = inferTradeJobType(next.service, next);
+    }
+
+    if (!next.job_details && next.job_type) {
+      next.job_details = next.job_type;
+    }
+  }
+
   return next;
 }
 
-function getMissingFieldsFromLead(lead) {
+function getMissingFieldsFromLead(lead, options = {}) {
   const missing = [];
+  const requireContact = options.requireContact !== false;
+  const requireAddress = options.requireAddress !== false;
 
   if (!lead.service || lead.service === "unknown") missing.push("service");
-  if (!lead.name) missing.push("name");
-  if (!lead.phone) missing.push("phone");
-  if (!lead.email || !isLikelyValidEmail(lead.email)) missing.push("email");
-  if (!lead.address) missing.push("address");
+  if (requireContact && !lead.name) missing.push("name");
+  if (requireContact && !lead.phone) missing.push("phone");
+  if (requireContact && (!lead.email || !isLikelyValidEmail(lead.email))) missing.push("email");
+  if (requireAddress && !lead.address) missing.push("address");
   if (!lead.job_type) missing.push("job_type");
   if (!lead.job_details) missing.push("job_details");
   if (!lead.preferred_datetime) missing.push("preferred_datetime");
@@ -810,14 +1075,31 @@ function hasExtraWork(lead) {
   return false;
 }
 
+function isDiagnosticTrade(service) {
+  return [
+    "plumbing",
+    "electrical",
+    "fencing",
+    "carpentry",
+    "painting",
+    "landscaping",
+    "handyman",
+  ].includes(service);
+}
+
 function buildQuoteReply(lead) {
+  const service = toLower(lead.service);
+
+  if (isDiagnosticTrade(service)) {
+    return "We can definitely help with that. I’ve got enough to pass this onto a qualified tradesman. Would you like me to organise this for you now?";
+  }
+
   const range = getQuoteRange(lead);
 
   if (!range) {
     return "We can definitely take care of that. Our team will contact you with a more accurate quote. Would you like me to organise this for you now?";
   }
 
-  const service = toLower(lead.service);
   const extras = hasExtraWork(lead);
 
   if (service === "lawn_mowing") {
@@ -908,25 +1190,37 @@ function buildQuoteReply(lead) {
     )} depending on the condition. Would you like me to organise this for you now?`;
   }
 
-  if (extras) {
-    return `We can definitely take care of that. The standard price usually ranges from ${formatCurrency(
-      range.min
-    )} to ${formatCurrency(
-      range.max
-    )}. For the extra work, our team will discuss that when they provide the quote. Would you like me to organise this for you now?`;
-  }
-
-  return `We can definitely take care of that. The price usually ranges from ${formatCurrency(
-    range.min
-  )} to ${formatCurrency(
-    range.max
-  )}. Would you like me to organise this for you now?`;
+  return "We can definitely take care of that. Would you like me to organise this for you now?";
 }
 
-function applyReplyOverrides(rawReply, extracted) {
-  const missing = extracted?.missing_fields || [];
+function shouldReuseCustomerDetails(history) {
+  return hasSubmittedMarker(history);
+}
+
+function getReuseContextFromExtracted(extracted) {
   const lead = extracted?.lead || {};
+  return {
+    hasName: Boolean(lead.name),
+    hasPhone: Boolean(lead.phone),
+    hasEmail: Boolean(lead.email && isLikelyValidEmail(lead.email)),
+    hasAddress: Boolean(lead.address),
+  };
+}
+
+function getMissingFieldsConsideringReuse(lead, history) {
+  const reuse = shouldReuseCustomerDetails(history);
+
+  return getMissingFieldsFromLead(lead, {
+    requireContact: !reuse,
+    requireAddress: !reuse ? true : !lead.address,
+  });
+}
+
+function applyReplyOverrides(rawReply, extracted, history = []) {
+  const lead = extracted?.lead || {};
+  const missing = getMissingFieldsConsideringReuse(lead, history);
   const nextField = missing[0];
+  const reuse = shouldReuseCustomerDetails(history);
 
   if (!nextField) {
     return buildQuoteReply(lead);
@@ -938,8 +1232,7 @@ function applyReplyOverrides(rawReply, extracted) {
 
   if (nextField === "name") {
     if (lead.service && lead.service !== "unknown") {
-      const serviceLabel = String(lead.service).replace(/_/g, " ");
-      return `Got it — ${serviceLabel}. What is your name please?`;
+      return `Got it — ${String(lead.service).replace(/_/g, " ")}. What is your name please?`;
     }
     return "What is your name please?";
   }
@@ -953,6 +1246,9 @@ function applyReplyOverrides(rawReply, extracted) {
   }
 
   if (nextField === "address") {
+    if (reuse) {
+      return "Is this for the same address as before, or a different one?";
+    }
     return "What’s the full address for the job, including postcode?";
   }
 
@@ -977,6 +1273,34 @@ function applyReplyOverrides(rawReply, extracted) {
       return "What kind of pest issue are you dealing with?";
     }
 
+    if (lead.service === "plumbing") {
+      return "What plumbing issue do you need help with? For example a blocked drain, hot water issue, leak or toilet problem.";
+    }
+
+    if (lead.service === "electrical") {
+      return "What electrical work needs to be done? For example lights, power points, fans or switchboard work.";
+    }
+
+    if (lead.service === "fencing") {
+      return "What fencing work do you need done? For example a new fence, repair, replacement or gate install.";
+    }
+
+    if (lead.service === "carpentry") {
+      return "What carpentry work needs to be done? For example deck work, framing, shelving, skirting or a door repair.";
+    }
+
+    if (lead.service === "painting") {
+      return "What needs painting? For example interior walls, ceilings, exterior house or a fence.";
+    }
+
+    if (lead.service === "landscaping") {
+      return "What landscaping work are you after? For example turf, garden clean-up, retaining wall or a full garden makeover.";
+    }
+
+    if (lead.service === "handyman") {
+      return "What jobs need to be done?";
+    }
+
     return "What type of job is it?";
   }
 
@@ -999,6 +1323,34 @@ function applyReplyOverrides(rawReply, extracted) {
 
     if (lead.service === "pest_control") {
       return "Can you briefly describe the property size — small, medium or large — and where the issue is?";
+    }
+
+    if (lead.service === "plumbing") {
+      return "Can you briefly describe where the issue is and whether it’s urgent, leaking or causing flooding?";
+    }
+
+    if (lead.service === "electrical") {
+      return "Can you briefly describe how many items are involved and whether it’s a repair or new installation?";
+    }
+
+    if (lead.service === "fencing") {
+      return "Can you briefly describe the fence length, material if known, and whether the old fence needs removing?";
+    }
+
+    if (lead.service === "carpentry") {
+      return "Can you briefly describe the size of the job and whether materials need to be supplied?";
+    }
+
+    if (lead.service === "painting") {
+      return "Can you briefly describe how many rooms or areas need painting, the approximate size, and whether any prep or repairs are needed first?";
+    }
+
+    if (lead.service === "landscaping") {
+      return "Can you briefly describe the size of the area, whether it’s a new project or existing garden, and anything specific you want included?";
+    }
+
+    if (lead.service === "handyman") {
+      return "Can you briefly describe the tasks, roughly how many there are, and whether any materials need to be supplied?";
     }
 
     return "Can you briefly describe the job so we can quote it properly?";
@@ -1239,6 +1591,8 @@ function isQuotePromptMessage(content) {
     normalized.includes("the base price usually ranges from") ||
     normalized.includes("the standard price usually ranges from") ||
     normalized.includes("our team will contact you with a more accurate quote") ||
+    normalized.includes("i’ve got enough to pass this onto a qualified tradesman") ||
+    normalized.includes("i've got enough to pass this onto a qualified tradesman") ||
     normalized.includes("would you like me to go ahead and organise your quote now") ||
     normalized.includes("would you like me to organise this for you now") ||
     normalized.includes("did you want me to organise a quote")
@@ -1267,10 +1621,37 @@ function looksLikeNoiseOrCorrection(message) {
   );
 }
 
+function looksLikeSameAddressConfirmation(message) {
+  const normalized = normalizeSpaces(message)
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const positives = [
+    "same address",
+    "same place",
+    "same one",
+    "same as before",
+    "same house",
+    "same property",
+    "yes same address",
+    "yep same address",
+    "yeah same address",
+    "same",
+  ];
+
+  return positives.includes(normalized);
+}
+
+function looksLikeNewServiceRequest(message) {
+  return detectServiceFromText(message) !== "unknown";
+}
+
 async function extractLeadFromTranscript(transcript) {
   const extractionResponse = await client.responses.create({
     model: "gpt-4o-mini",
-    max_output_tokens: 260,
+    max_output_tokens: 420,
     input: [
       {
         role: "system",
@@ -1283,11 +1664,15 @@ async function extractLeadFromTranscript(transcript) {
     ],
   });
 
-  const extracted = safeJsonParse(extractionResponse.output_text) || {
-    service: "unknown",
-    is_complete: false,
-    missing_fields: [],
-    lead: emptyLead(),
+  const parsed = safeJsonParse(extractionResponse.output_text) || {};
+  const extracted = {
+    service: parsed.service || "unknown",
+    is_complete: Boolean(parsed.is_complete),
+    missing_fields: Array.isArray(parsed.missing_fields) ? parsed.missing_fields : [],
+    lead: parsed.lead && typeof parsed.lead === "object" ? parsed.lead : emptyLead(),
+    known_customer: parsed.known_customer && typeof parsed.known_customer === "object"
+      ? parsed.known_customer
+      : emptyLead(),
   };
 
   let lead = {
@@ -1295,7 +1680,23 @@ async function extractLeadFromTranscript(transcript) {
     service: extracted.service || extracted.lead?.service || "unknown",
   };
 
+  let knownCustomer = {
+    ...emptyLead(),
+    ...(extracted.known_customer || {}),
+  };
+
+  knownCustomer = inferMissingLeadFields(knownCustomer);
   lead = inferMissingLeadFields(lead);
+
+  if (!knownCustomer.service) knownCustomer.service = "";
+  if (!lead.service || lead.service === "unknown") {
+    lead.service = detectServiceFromText(transcript);
+  }
+
+  if (!lead.name && knownCustomer.name) lead.name = knownCustomer.name;
+  if (!lead.phone && knownCustomer.phone) lead.phone = knownCustomer.phone;
+  if (!lead.email && knownCustomer.email) lead.email = knownCustomer.email;
+  if (!lead.address && knownCustomer.address) lead.address = knownCustomer.address;
 
   const missing_fields = getMissingFieldsFromLead(lead);
   const is_complete = missing_fields.length === 0;
@@ -1309,7 +1710,9 @@ async function extractLeadFromTranscript(transcript) {
 
   return {
     ...extracted,
+    known_customer: knownCustomer,
     lead,
+    service: lead.service || "unknown",
     missing_fields,
     is_complete,
   };
@@ -1329,7 +1732,7 @@ async function submitConfirmedLead({ history, message }) {
       ok: false,
       extracted,
       lead,
-      reply: applyReplyOverrides("Perfect — I’ve got everything I need.", extracted),
+      reply: applyReplyOverrides("Perfect — I’ve got everything I need.", extracted, history),
       submitted: false,
       submissionError: null,
     };
@@ -1373,6 +1776,13 @@ Supported services:
 - car detailing
 - pressure washing
 - pest control
+- plumbing
+- electrical
+- fencing
+- carpentry
+- painting
+- landscaping
+- handyman
 
 Goal:
 Collect only the core details needed for a free quote:
@@ -1385,21 +1795,30 @@ Collect only the core details needed for a free quote:
 7. basic job details
 8. preferred date and time
 
+Critical behavior:
+- If the customer has already submitted one quote and asks for a second service, reuse their existing name, phone, email, and address unless they say those details are different.
+- Do not ask for name, phone, or email again if they were already given earlier in the conversation.
+- If a previous address exists and the user asks for another quote, ask whether it is for the same address only if needed.
+- Treat "we went through this", "same as before", and similar replies as a sign to reuse existing details.
+
 Rules:
 - Ask one question at a time.
 - Keep replies very short.
 - Sound natural.
 - Do not repeat details already given.
-- Do not give pricing, availability, or provider names.
+- Do not give pricing, availability, or provider names unless the flow later adds a rough price automatically.
 - If the service is obvious, do not ask for it again.
 - If the job type is obvious, do not ask for it again.
+- Be tolerant of typos, slang, half-sentences, voice-to-text mistakes, shorthand, and messy wording.
+- If the user says random filler, acknowledges, or sends a correction, do not restart the flow.
+- Treat casual phrases as valid intent, for example:
+  "my toilet is stuffed", "need a sparkie", "fence is falling over", "need my yard sorted", "need a painter", "need someone to fix bits around the house".
 - For lawn mowing, if the user clearly wants a standard mow and already gave yard details, do not ask again if it is a regular mow.
 - For lawn mowing, when asking for job details, ask specifically for lawn size and any extras so a rough price can be given.
 - For pressure washing, treat answers like driveway, concrete, paths, patio, house exterior, deck, fence, roof, gutters, pool area, or concrete outside home as valid job types.
 - For pressure washing, if the user says something like "concrete outside home", "driveway", or "paths around the house", do not ask "What needs pressure washing?" again.
-- If the user makes a typo, speech mistake, or irrelevant interruption near quote stage, do not restart discovery.
-- If the user confirms after a quote prompt, do not restart discovery.
-- Reuse contact details and address for another service unless the user changes them.
+- For plumbing, electrical, fencing, carpentry, painting, landscaping, and handyman, you do not need a technical diagnosis.
+- For those trade services, only collect enough simple info to pass the lead to a qualified tradesman.
 - When asking for name, say exactly:
 "What is your name please?"
 - When asking for phone, say exactly:
@@ -1413,9 +1832,15 @@ Extract the lead information from the conversation and return JSON only.
 
 Return exactly this shape:
 {
-  "service": "cleaning | lawn_mowing | car_detailing | pressure_washing | pest_control | unknown",
+  "service": "cleaning | lawn_mowing | car_detailing | pressure_washing | pest_control | plumbing | electrical | fencing | carpentry | painting | landscaping | handyman | unknown",
   "is_complete": true,
   "missing_fields": [],
+  "known_customer": {
+    "name": "",
+    "phone": "",
+    "email": "",
+    "address": ""
+  },
   "lead": {
     "service": "",
     "name": "",
@@ -1432,6 +1857,10 @@ Rules:
 - Use empty strings for unknown values.
 - If an email is spoken with spaces, reconstruct it into normal email format.
 - If a phone number contains spaces, reconstruct it into normal format.
+- If the user's wording is messy, slang, incomplete, or voice-to-text style, still extract the best meaning.
+- Ignore filler, corrections, accidental messages, and unrelated noise where possible.
+- "known_customer" should capture the latest reliable customer identity/contact details from anywhere in the conversation.
+- If a second service is discussed later in the conversation, reuse previously collected customer details in the "lead" if the user has not changed them.
 - For lawn mowing, if the conversation clearly indicates a standard mow and includes yard details, infer job_type as "regular lawn mow" if needed.
 - For lawn mowing, if the user gives generic job details like "all good", "none", or "no extras", keep the lead complete and allow pricing to default to a medium lawn if size is still unknown.
 - For pressure washing, map common user answers into a usable job_type when obvious:
@@ -1442,9 +1871,41 @@ Rules:
   - fence / wall -> "fence / wall"
   - roof / gutters -> "roof / gutters"
   - pool area / pool surround -> "pool area"
-- If the user already answered what needs pressure washing in plain language, do not leave job_type blank.
+- For plumbing, map obvious issues when possible:
+  - blocked drain / blocked sink / blocked toilet -> "blocked drain / blockage"
+  - hot water / no hot water -> "hot water system issue"
+  - leaking tap / leaking shower / burst pipe / leak -> "leak / pipe issue"
+  - toilet not flushing / toilet issue -> "toilet issue"
+- For electrical, map obvious issues when possible:
+  - lights / downlights / light install -> "lighting work"
+  - power point / powerpoint -> "power point work"
+  - fan / ceiling fan -> "ceiling fan work"
+  - switchboard -> "switchboard work"
+- For fencing, map obvious issues when possible:
+  - new fence -> "new fence"
+  - repair fence / broken fence -> "fence repair"
+  - replace fence -> "fence replacement"
+  - gate -> "gate install / repair"
+- For carpentry, map obvious issues when possible:
+  - deck -> "deck work"
+  - framing -> "framing"
+  - shelf / shelving -> "shelving / storage"
+  - door -> "door repair / install"
+  - skirting / trim -> "skirting / trim work"
+- For painting, map obvious issues when possible:
+  - interior -> "interior painting"
+  - exterior -> "exterior painting"
+  - ceiling -> "ceiling painting"
+  - fence -> "fence painting"
+- For landscaping, map obvious issues when possible:
+  - turf -> "turf installation"
+  - retaining wall -> "retaining wall"
+  - garden clean up / garden cleanup -> "garden clean-up"
+  - paving -> "paving / hardscaping"
+  - garden design -> "garden design"
+- For handyman, if obvious but broad, use "handyman / general repairs".
 - "service" must be one of:
-  cleaning, lawn_mowing, car_detailing, pressure_washing, pest_control, unknown
+  cleaning, lawn_mowing, car_detailing, pressure_washing, pest_control, plumbing, electrical, fencing, carpentry, painting, landscaping, handyman, unknown
 - "is_complete" must only be true when all of these fields are present:
   service, name, phone, email, address, job_type, job_details, preferred_datetime
 - "missing_fields" should contain machine-friendly field names only.
@@ -1542,14 +2003,78 @@ export default async function handler(req, res) {
       });
     }
 
+    const preExtracted = await extractLeadFromTranscript(transcriptWithCurrentMessage);
+    const reuseContext = getReuseContextFromExtracted(preExtracted);
+    const preMissing = getMissingFieldsConsideringReuse(preExtracted.lead || emptyLead(), history);
+
+    if (
+      hasSubmittedMarker(history) &&
+      looksLikeNewServiceRequest(message) &&
+      preMissing.length > 0
+    ) {
+      const reply = applyReplyOverrides("Perfect — I’ve got everything I need.", preExtracted, history);
+
+      return res.status(200).json({
+        reply,
+        voiceReply: reply,
+        submitted: false,
+        leadComplete: false,
+        service: preExtracted.lead?.service || "unknown",
+        missingFields: preMissing,
+        submissionError: null,
+        reusedCustomerDetails: reuseContext,
+      });
+    }
+
+    if (
+      hasSubmittedMarker(history) &&
+      looksLikeSameAddressConfirmation(message) &&
+      preExtracted.known_customer?.address &&
+      !preExtracted.lead?.address
+    ) {
+      preExtracted.lead.address = preExtracted.known_customer.address;
+      preExtracted.missing_fields = getMissingFieldsConsideringReuse(preExtracted.lead, history);
+
+      const reply = applyReplyOverrides("Perfect — I’ve got everything I need.", preExtracted, history);
+
+      return res.status(200).json({
+        reply,
+        voiceReply: reply,
+        submitted: false,
+        leadComplete: false,
+        service: preExtracted.lead?.service || "unknown",
+        missingFields: preExtracted.missing_fields || [],
+        submissionError: null,
+      });
+    }
+
     console.log("Incoming ServHQ message:", message);
     console.log("Normalized history length:", history.length);
+
+    const reuseInstruction = hasSubmittedMarker(history)
+      ? `Known customer details already collected earlier in this conversation:
+Name: ${preExtracted.known_customer?.name || ""}
+Phone: ${preExtracted.known_customer?.phone || ""}
+Email: ${preExtracted.known_customer?.email || ""}
+Address: ${preExtracted.known_customer?.address || ""}
+
+If the customer is asking for another service, reuse these details and do not ask again unless the customer changes them.
+`
+      : "";
 
     const assistantInput = [
       {
         role: "system",
         content: ASSISTANT_PROMPT,
       },
+      ...(reuseInstruction
+        ? [
+            {
+              role: "system",
+              content: reuseInstruction,
+            },
+          ]
+        : []),
       ...modelHistory.map((m) => ({
         role: m.role,
         content: m.content,
@@ -1562,7 +2087,7 @@ export default async function handler(req, res) {
 
     const assistantResponse = await client.responses.create({
       model: "gpt-4o-mini",
-      max_output_tokens: 120,
+      max_output_tokens: 140,
       input: assistantInput,
     });
 
@@ -1573,21 +2098,45 @@ export default async function handler(req, res) {
     let reply = rawReply;
     let submitted = false;
     let submissionError = null;
-    let extracted = null;
-    let lead = emptyLead();
+    let extracted = preExtracted;
+    let lead = extracted.lead || emptyLead();
+
+    const calculatedMissing = getMissingFieldsConsideringReuse(lead, history);
+
+    if (hasSubmittedMarker(history) && calculatedMissing.length > 0) {
+      const accidentalRepeat =
+        rawReply.includes("What is your name please?") ||
+        rawReply.includes("What’s the best phone number to reach you?") ||
+        rawReply.includes("What's the best phone number to reach you?") ||
+        rawReply.includes("What’s your email") ||
+        rawReply.includes("What is your email");
+
+      if (accidentalRepeat) {
+        reply = applyReplyOverrides(rawReply, extracted, history);
+      }
+    }
 
     if (shouldExtractNow(rawReply)) {
       extracted = await extractLeadFromTranscript(transcriptWithCurrentMessage);
       lead = extracted.lead || emptyLead();
 
-      console.log("Extracted lead:", JSON.stringify(lead, null, 2));
-      console.log("Is complete:", extracted.is_complete);
-      console.log("Missing fields:", extracted.missing_fields || []);
+      const missingWithReuse = getMissingFieldsConsideringReuse(lead, history);
 
-      if (extracted.is_complete) {
+      console.log("Extracted lead:", JSON.stringify(lead, null, 2));
+      console.log("Missing fields (reuse-aware):", missingWithReuse || []);
+
+      if (missingWithReuse.length === 0) {
         reply = buildQuoteReply(lead);
       } else {
-        reply = applyReplyOverrides(rawReply, extracted);
+        reply = applyReplyOverrides(rawReply, extracted, history);
+      }
+    }
+
+    if (!shouldExtractNow(rawReply) && hasSubmittedMarker(history)) {
+      const missingWithReuse = getMissingFieldsConsideringReuse(lead, history);
+
+      if (missingWithReuse.length > 0) {
+        reply = applyReplyOverrides(rawReply, extracted, history);
       }
     }
 
@@ -1598,7 +2147,9 @@ export default async function handler(req, res) {
       const fallbackQuotePromptSeen =
         quotePromptSeen || isQuotePromptMessage(reply);
 
-      if (fallbackExtracted.is_complete && fallbackQuotePromptSeen) {
+      const fallbackMissing = getMissingFieldsConsideringReuse(fallbackLead, history);
+
+      if (fallbackMissing.length === 0 && fallbackQuotePromptSeen) {
         const result = await submitConfirmedLead({ history, message });
 
         return res.status(200).json({
@@ -1622,12 +2173,14 @@ export default async function handler(req, res) {
       reply,
       voiceReply: reply,
       submitted,
-      leadComplete: Boolean(extracted?.is_complete),
+      leadComplete:
+        getMissingFieldsConsideringReuse(extracted?.lead || emptyLead(), history).length === 0,
       service: lead.service || "unknown",
-      missingFields: extracted?.missing_fields || [],
+      missingFields: getMissingFieldsConsideringReuse(extracted?.lead || emptyLead(), history),
       submissionError: submissionError
         ? String(submissionError.message || submissionError)
         : null,
+      reusedCustomerDetails: reuseContext,
     });
   } catch (error) {
     console.error("ServHQ fatal error:", error);
